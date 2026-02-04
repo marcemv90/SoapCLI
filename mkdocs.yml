@@ -20,7 +20,6 @@ nav:
     - Themes: cli-themes.md
     - Return codes & errors: cli-rc-and-errors.md
     - Debug: cli-debug.md
-  - Buy me a coffee: buy-me-a-coffee.md
 
 theme:
   name: material

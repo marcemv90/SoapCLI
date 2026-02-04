@@ -12,14 +12,6 @@ It is designed to be:
 - **Script-friendly** – works well in shell scripts and CI pipelines.
 - **Flexible** – supports HTTPS with client certificates and configurable profiles.
 
-If you find this tool useful and want to say thanks, you can buy me a coffee via PayPal:
-
-<p align="center">
-  <a href="https://www.paypal.com/paypalme/marcemv90/2" target="_blank">
-    <img src="docs/assets/img/misc/buy-me-a-coffee.png" alt="Buy me a coffee" width="30%"/>
-  </a>
-</p>
-
 ---
 
 ## Quick start
