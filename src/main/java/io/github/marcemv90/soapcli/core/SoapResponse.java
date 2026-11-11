@@ -55,6 +55,23 @@ public final class SoapResponse {
         return header("Content-Type");
     }
 
+    /** Multipart (MTOM) and other non-text responses must not be decoded as text. */
+    public boolean isBinary() {
+        return isBinaryContentType(contentType());
+    }
+
+    public static boolean isBinaryContentType(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        String ct = contentType.toLowerCase(java.util.Locale.ROOT);
+        if (ct.startsWith("multipart/")) {
+            return true;
+        }
+        return !(ct.contains("xml") || ct.startsWith("text/") || ct.contains("json") || ct.contains("html")
+                || ct.contains("soap"));
+    }
+
     /** All headers, in the order the server sent them. */
     public List<Map.Entry<String, String>> headerEntries() {
         return headerList;

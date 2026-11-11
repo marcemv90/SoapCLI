@@ -48,6 +48,9 @@ public final class SoapClient {
         HeaderMap headers = request.headers.copy();
         int redirects = 0;
         while (true) {
+            if (options.hostPolicy != null) {
+                options.hostPolicy.check(uri.getHost()); // before any DNS lookup or connection, on every hop
+            }
             SoapResponse response;
             try {
                 response = exchange(uri, headers, request.body, options, started);
@@ -124,7 +127,7 @@ public final class SoapClient {
             byte[] bytes = new byte[0];
             if (in != null) {
                 try (InputStream stream = decompress(in, conn.getContentEncoding())) {
-                    bytes = stream.readAllBytes();
+                    bytes = readBody(stream, options.maxResponseBytes);
                 }
             }
             long elapsed = (System.nanoTime() - started) / 1_000_000L;
@@ -132,6 +135,27 @@ public final class SoapClient {
         } finally {
             conn.disconnect();
         }
+    }
+
+    /** Thrown while reading a response that exceeds {@link TransportOptions#maxResponseBytes}. */
+    private static final class ResponseTooLargeException extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        ResponseTooLargeException(long limit) {
+            super("The response is larger than the limit of " + limit + " bytes");
+        }
+    }
+
+    private static byte[] readBody(InputStream stream, long limit) throws IOException {
+        if (limit <= 0) {
+            return stream.readAllBytes();
+        }
+        // Read one byte more than allowed so "exactly at the limit" is accepted and "over" is detected.
+        byte[] bytes = stream.readNBytes((int) Math.min(limit + 1, Integer.MAX_VALUE - 8));
+        if (bytes.length > limit) {
+            throw new ResponseTooLargeException(limit);
+        }
+        return bytes;
     }
 
     private static InputStream decompress(InputStream in, String contentEncoding) throws IOException {
@@ -165,7 +189,9 @@ public final class SoapClient {
         String detail = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
         String message;
 
-        if (e instanceof UnknownHostException) {
+        if (e instanceof ResponseTooLargeException) {
+            message = detail + " (the response was discarded)";
+        } else if (e instanceof UnknownHostException) {
             message = "Unknown host '" + uri.getHost() + "' (DNS lookup failed)";
         } else if (e instanceof SocketTimeoutException) {
             if (detail.toLowerCase(Locale.ROOT).contains("connect")) {

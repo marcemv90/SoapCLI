@@ -9,7 +9,6 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Locale;
 import java.util.Map;
 
 /** Presents a {@link SoapResponse}: the body on stdout (or a file), everything else on stderr. */
@@ -56,7 +55,7 @@ final class ResponsePrinter {
             return;
         }
 
-        if (raw || isBinary(r.contentType())) {
+        if (raw || r.isBinary()) {
             if (file != null) {
                 Files.write(file, body);
             } else {
@@ -76,18 +75,5 @@ final class ResponsePrinter {
         } else {
             out.print(color ? AnsiColorizer.colorize(text, theme) : text);
         }
-    }
-
-    /** Multipart (MTOM) and other non-text responses must not be decoded as text. */
-    static boolean isBinary(String contentType) {
-        if (contentType == null) {
-            return false;
-        }
-        String ct = contentType.toLowerCase(Locale.ROOT);
-        if (ct.startsWith("multipart/")) {
-            return true;
-        }
-        return !(ct.contains("xml") || ct.startsWith("text/") || ct.contains("json") || ct.contains("html")
-                || ct.contains("soap"));
     }
 }

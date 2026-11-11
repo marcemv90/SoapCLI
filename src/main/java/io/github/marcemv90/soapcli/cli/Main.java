@@ -4,9 +4,21 @@ import java.io.BufferedOutputStream;
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
+import io.github.marcemv90.soapcli.web.ServeCommand;
 import java.io.UnsupportedEncodingException;
+import java.util.Arrays;
 
-/** Entry point: wires the real console into {@link Cli} and exits with its result. */
+/**
+ * Entry point: wires the real console into {@link Cli} (or the web UI) and exits with its result.
+ *
+ * <ul>
+ *   <li>{@code serve [options]}: start the web UI;</li>
+ *   <li>{@code healthcheck}: exit 0 if a web UI answers on this machine (used by the Docker HEALTHCHECK);</li>
+ *   <li>{@code cli ...}: the command line client, explicitly (handy in a container whose default command is
+ *       {@code serve});</li>
+ *   <li>anything else: the command line client, as always.</li>
+ * </ul>
+ */
 public final class Main {
 
     private Main() {
@@ -28,6 +40,20 @@ public final class Main {
         } catch (UnsupportedEncodingException e) {
             out = System.out;
             err = System.err;
+        }
+        String[] rest = args.length > 0 ? Arrays.copyOfRange(args, 1, args.length) : args;
+        if (args.length > 0 && args[0].equals("serve")) {
+            int code = ServeCommand.run(rest, System.getenv(), System.getProperty("user.home"), out, err);
+            out.flush();
+            System.exit(code);
+        }
+        if (args.length > 0 && args[0].equals("healthcheck")) {
+            int code = ServeCommand.healthcheck(rest, System.getenv(), out, err);
+            out.flush();
+            System.exit(code);
+        }
+        if (args.length > 0 && args[0].equals("cli")) {
+            args = rest;
         }
         int code = new Cli(System.in, out, err, System.getenv(), System.getProperty("user.home"),
                 System.getProperty("os.name"), terminal).run(args);

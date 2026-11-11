@@ -10,6 +10,7 @@ import io.github.marcemv90.soapcli.core.SoapCliException;
 import io.github.marcemv90.soapcli.core.SoapClient;
 import io.github.marcemv90.soapcli.core.SoapResponse;
 import io.github.marcemv90.soapcli.core.TransportException;
+import io.github.marcemv90.soapcli.core.Version;
 import io.github.marcemv90.soapcli.core.XmlCharsets;
 import java.io.IOException;
 import java.io.InputStream;
