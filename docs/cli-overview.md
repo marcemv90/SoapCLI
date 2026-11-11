@@ -14,4 +14,6 @@ This section explains how to use `SoapCLI` from the command line, including:
 - Understanding [return codes and errors](cli-rc-and-errors.md) when scripting.
 - Seeing what is really sent with [dry-run and debug](cli-debug.md).
 
+Prefer a browser? The same engine is available as a [web UI](web-ui.md), and the [Docker image](docker.md) can run either.
+
 Run `java -jar SoapCLI.jar --help` for the complete, always up-to-date list of options.

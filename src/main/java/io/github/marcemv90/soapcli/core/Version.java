@@ -1,17 +1,18 @@
-package io.github.marcemv90.soapcli.cli;
+package io.github.marcemv90.soapcli.core;
 
 /** The version stamped into the jar manifest by the build ({@code -Drevision=...}). */
-final class Version {
+public final class Version {
 
     private Version() {
     }
 
-    static String get() {
+    /** The version, or {@code dev} when running from compiled classes instead of the jar. */
+    public static String get() {
         String v = Version.class.getPackage().getImplementationVersion();
         return v == null ? "dev" : v;
     }
 
-    static String userAgent() {
+    public static String userAgent() {
         return "SoapCLI/" + get();
     }
 }

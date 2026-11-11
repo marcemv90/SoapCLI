@@ -62,3 +62,83 @@ jobs:
       # --strict fails on broken links and pages missing from the navigation.
       - name: Build site
         run: mkdocs build --strict --clean
+
+  ui:
+    name: Web UI (typecheck, tests, build is up to date)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+
+      # --ignore-scripts: nothing in the dependency tree needs to run code at install time.
+      - name: Install dependencies
+        working-directory: web-ui
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck
+        working-directory: web-ui
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: web-ui
+        run: npm test
+
+      # The compiled UI is committed (so building the jar needs no Node). This makes sure it matches the sources.
+      - name: Build, and check that the committed build is current
+        run: |
+          npm --prefix web-ui run build
+          if [ -n "$(git status --porcelain -- src/main/resources/web)" ]; then
+            git status --porcelain -- src/main/resources/web
+            echo "::error::src/main/resources/web is out of date. Run 'npm run build' in web-ui and commit the result."
+            exit 1
+          fi
+
+  docker:
+    name: Docker image (build, UI mode, command line mode)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --build-arg VERSION=0.0.0-ci -t soapcli:ci .
+
+      - name: Command line mode
+        run: |
+          docker run --rm soapcli:ci --version | tee version.txt
+          grep -qx "SoapCLI 0.0.0-ci" version.txt
+          docker run --rm soapcli:ci cli --version | grep -qx "SoapCLI 0.0.0-ci"
+          printf '<a/>' | docker run --rm -i soapcli:ci --endpoint http://example.invalid/soap --dry-run | grep -q "SOAP-CLI DRY-RUN"
+          # stdin, a file from a mounted directory, and the exit code of a call that cannot be delivered
+          printf '<a/>' > request.xml
+          set +e
+          docker run --rm -v "$PWD:/work" soapcli:ci --endpoint http://127.0.0.1:1/ --request-file request.xml
+          test "$?" -eq 2
+
+      - name: Web UI mode (the default)
+        run: |
+          docker run -d --name ui -p 18080:8080 soapcli:ci
+          for i in $(seq 1 40); do curl -fsS http://127.0.0.1:18080/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:18080/ | grep -q 'id="root"'
+          curl -fsS http://127.0.0.1:18080/api/info | grep -q '"version":"0.0.0-ci"'
+          docker exec ui java -jar /app/SoapCLI.jar healthcheck
+          docker logs ui
+
+      - name: Web UI with a login
+        run: |
+          docker rm -f ui
+          docker run -d --name ui -p 18080:8080 -e SOAPCLI_UI_USER=alice -e SOAPCLI_UI_PASSWORD=secret soapcli:ci
+          for i in $(seq 1 40); do curl -fsS http://127.0.0.1:18080/healthz && break; sleep 1; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/)" = "401"
+          curl -fsS -u alice:secret -o /dev/null http://127.0.0.1:18080/
+          docker rm -f ui
+
+      - name: Does not run as root
+        run: test "$(docker run --rm --entrypoint id soapcli:ci -u)" != "0"

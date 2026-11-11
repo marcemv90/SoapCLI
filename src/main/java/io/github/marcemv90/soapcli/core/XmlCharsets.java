@@ -57,6 +57,19 @@ public final class XmlCharsets {
         return new Decoded(new String(bytes, charset), charset);
     }
 
+    /**
+     * The encoding an XML text declares in its prolog, or UTF-8. Use it when the text was already decoded (for
+     * instance, typed in a browser) and must be sent in the encoding it claims.
+     */
+    public static Charset declared(String text) {
+        if (text == null) {
+            return StandardCharsets.UTF_8;
+        }
+        Matcher m = XML_DECL.matcher(text.length() > 256 ? text.substring(0, 256) : text);
+        Charset charset = m.find() ? forName(m.group(1)) : null;
+        return charset != null ? charset : StandardCharsets.UTF_8;
+    }
+
     /** The {@code charset} parameter of a Content-Type value, or {@code null} if absent or unsupported. */
     public static Charset charsetOf(String contentType) {
         if (contentType == null) {

@@ -1,6 +1,7 @@
 package io.github.marcemv90.soapcli.cli;
 
 import io.github.marcemv90.soapcli.core.SoapVersion;
+import io.github.marcemv90.soapcli.core.Version;
 import io.github.marcemv90.soapcli.core.XmlFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -213,6 +214,7 @@ final class Options {
         sb.append("SoapCLI ").append(Version.get()).append(" - send a SOAP request from the command line\n\n");
         sb.append("Usage: java -jar SoapCLI.jar --endpoint <URL> [--request-file <file.xml>] [options]\n");
         sb.append("       cat request.xml | java -jar SoapCLI.jar --endpoint <URL> [options]\n");
+        sb.append("       java -jar SoapCLI.jar serve [options]      start the web UI (try: serve --help)\n");
 
         Map<String, List<OptionSpec>> groups = new LinkedHashMap<>();
         for (OptionSpec spec : ALL) {

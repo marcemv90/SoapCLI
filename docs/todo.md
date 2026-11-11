@@ -5,22 +5,21 @@
 
     This project is PR welcome!
 
-## Next big thing: a web UI in a Docker image
+## Web UI and Docker
 
-The plan is to be able to start `SoapCLI` as a small web application (a browser client for the same engine) and ship it
-as a Docker image, to deploy it on a server and use it from the browser against the servers that server can reach, with
-profiles shared by the team.
+Done in 2.1.0: see [Web UI](web-ui.md) and [Docker](docker.md).
 
-- [ ] `--serve` mode (or a separate launcher) with a minimal web server and a single-page UI
-- [ ] REST API over the existing engine: send a request, list/show profiles (secrets never leave the server)
-- [ ] Request editor with history, response viewer (formatted, with status and headers)
-- [ ] Dockerfile + image (non-root user, profiles file as a mounted volume, secrets via environment variables)
-- [ ] Safety for shared deployments: authentication in front of it, optional allow-list of target hosts (SSRF),
-      audit log without secrets
-
-The groundwork is done: the engine lives in a `core` package with no console I/O and no `System.exit`, the profiles
-store can be used without the CLI, and the request that is previewed is the object that is sent. See
-[Architecture](architecture.md) for the design notes.
+- [x] `serve` mode with a web server and a single-page UI, embedded in the JAR
+- [x] JSON API over the engine: send, preview, format, profiles (secrets never leave the server)
+- [x] Request editor with attachments, history and a library; response viewer with status, headers and the built request
+- [x] Dockerfile and image: UI by default, command line client on demand; non-root; published to `ghcr.io`
+- [x] Safety for shared deployments: login, allow-list of destinations (checked on redirects), size and timeout limits,
+      access log without secrets
+- [ ] Multi-architecture image (`linux/arm64` next to `linux/amd64`)
+- [ ] Keep attachments in the library (today they live in memory and are never stored)
+- [ ] TLS and per-user logins in the server itself (today: a reverse proxy and one shared login)
+- [ ] Edit server profiles from the UI
+- [ ] Decode MTOM/multipart responses in the UI and offer the parts for download
 
 ## 1. Request / Transport Features
 
