@@ -14,6 +14,11 @@ on:
         description: 'Optional release description to use when manually triggering'
         required: false
         type: string
+      docker_only:
+        description: 'Only (re)publish the Docker image for tag_name, built from the selected ref. The release and the JAR are left alone'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -21,6 +26,7 @@ permissions:
 jobs:
   build-and-release:
     name: Build and publish SoapCLI JAR
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.docker_only) }}
     runs-on: ubuntu-latest
     env:
       TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name }}
@@ -63,27 +69,66 @@ jobs:
     name: Publish the Docker image
     runs-on: ubuntu-latest
     needs: build-and-release
+    # build-and-release is skipped when only the image is republished; a failed release must not publish an image.
+    if: ${{ !cancelled() && (needs.build-and-release.result == 'success' || needs.build-and-release.result == 'skipped') }}
     permissions:
       contents: read
       packages: write
     env:
       TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name }}
-      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # The image is published for linux/amd64 (Intel/AMD, most servers) and linux/arm64 (Apple Silicon, ARM servers).
+      # The arm64 variant is assembled on this amd64 runner; only a few shell commands run under emulation, because the
+      # Dockerfile builds the (platform independent) jar natively.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       # ghcr.io/<owner>/soapcli:<version> and :latest. Registry names must be lower case.
-      - name: Build and push
+      - name: Work out the image name and version
+        id: meta
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/soapcli"
-          VERSION="${TAG_NAME#v}"
-          docker build \
-            --build-arg VERSION="$VERSION" \
-            --label org.opencontainers.image.version="$VERSION" \
-            --label org.opencontainers.image.revision="$GITHUB_SHA" \
-            -t "$IMAGE:$VERSION" -t "$IMAGE:latest" .
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker push "$IMAGE:$VERSION"
-          docker push "$IMAGE:latest"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/soapcli" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # No provenance attestation: it adds an "unknown/unknown" entry to the manifest list that some tools and
+      # registry UIs mistake for a platform. The list then has exactly the two real platforms.
+      - name: Build and push (linux/amd64, linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image }}:latest
+
+      - name: Check what was published
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE:$VERSION" | tee inspect.txt
+          grep -q "linux/amd64" inspect.txt
+          grep -q "linux/arm64" inspect.txt

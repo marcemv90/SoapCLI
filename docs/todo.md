@@ -15,7 +15,7 @@ Done in 2.1.0: see [Web UI](web-ui.md) and [Docker](docker.md).
 - [x] Dockerfile and image: UI by default, command line client on demand; non-root; published to `ghcr.io`
 - [x] Safety for shared deployments: login, allow-list of destinations (checked on redirects), size and timeout limits,
       access log without secrets
-- [ ] Multi-architecture image (`linux/arm64` next to `linux/amd64`)
+- [x] Multi-architecture image (`linux/amd64` and `linux/arm64`)
 - [ ] Keep attachments in the library (today they live in memory and are never stored)
 - [ ] TLS and per-user logins in the server itself (today: a reverse proxy and one shared login)
 - [ ] Edit server profiles from the UI

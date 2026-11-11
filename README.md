@@ -88,7 +88,8 @@ docker run --rm -v "$PWD:/work" ghcr.io/marcemv90/soapcli \
   --endpoint https://example.com/soap --request-file request.xml                # the command line client
 ```
 
-For a shared server: set a login and the allowed destinations, and put it behind HTTPS. See the
+The image runs on Intel/AMD and ARM (Apple Silicon) machines. For a shared server: set a login and the allowed destinations,
+and put it behind HTTPS. See the
 [Docker documentation](https://marcemv90.github.io/SoapCLI/docker/) and `compose.yaml`.
 
 ### Exit codes

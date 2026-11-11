@@ -8,15 +8,21 @@ docker run -p 8080:8080 IMAGE                          the web UI (default)
 docker run --rm -v "$PWD:/work" IMAGE --endpoint ...   the command line client
 ```
 
-The image is `ghcr.io/marcemv90/soapcli` (tags: a version such as `2.1.0`, and `latest`). To build it yourself:
+The image is `ghcr.io/marcemv90/soapcli` (tags: a version such as `2.1.0`, and `latest`). It is published for **`linux/amd64`**
+(Intel and AMD PCs and servers, Windows with Docker Desktop) and **`linux/arm64`** (Macs with Apple Silicon, ARM servers):
+Docker pulls the one that matches your machine, so the same command works everywhere. To build it yourself:
 
 ```bash
 docker build -t soapcli .
 ```
 
-!!! note "Making the published image visible"
-    The first time a release publishes the image to GitHub's container registry it is private; open the package's
-    settings on GitHub and set its visibility to *public* if you want others to pull it.
+This builds for the machine you run it on. To build both platforms, use Buildx (`docker buildx build --platform linux/amd64,linux/arm64 .`).
+
+!!! note "Publishing your own copy"
+    The package is public because it is linked to a public repository. If you fork the project and publish the image
+    from your fork, check on GitHub (your profile, *Packages*, `soapcli`, *Package settings*) that its visibility is what
+    you want and that your repository appears under *Manage Actions access* with the **Write** role (or higher);
+    without it the push is refused with `denied`.
 
 ## The web UI (default)
 
@@ -148,7 +154,8 @@ You can also say `cli` explicitly (`docker run --rm IMAGE cli --version`).
 
 ## What is in the image
 
-A slim Java 21 runtime (the jar itself targets Java 11), the jar, and nothing else; it runs as an unprivileged user. The
+A slim Java 21 runtime (the jar itself targets Java 11) for `amd64` and `arm64`, the jar, and nothing else; it runs as an
+unprivileged user. The
 web UI is built into the jar, so the image has no web server or Node. `ENTRYPOINT` is `java -jar /app/SoapCLI.jar` and
 `CMD` is `serve`, which is why arguments to `docker run` select the command line client. Volumes: `/config` (profiles) and
 `/work` (the command line client's files).

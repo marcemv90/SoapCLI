@@ -8,7 +8,9 @@
 # The web UI is already compiled and committed under src/main/resources/web, so this build needs only Maven + a JDK.
 
 # ---- build the jar ---------------------------------------------------------------------------------------------------
-FROM maven:3.9-eclipse-temurin-21 AS build
+# The jar is the same on every platform, so it is built once, natively, on the machine that runs the build
+# ($BUILDPLATFORM) instead of once per target architecture (an emulated Maven build would take many minutes).
+FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /src
 
 # Dependencies first, so that changing the code does not download them again.
@@ -22,7 +24,8 @@ RUN mvn -B -ntp -q -DskipTests ${VERSION:+-Drevision=$VERSION} package \
  && cp target/SoapCLI.jar /SoapCLI.jar
 
 # ---- run -------------------------------------------------------------------------------------------------------------
-# The jar targets Java 11 but runs on any newer JRE; the current LTS gets the security updates.
+# The jar targets Java 11 but runs on any newer JRE; the current LTS gets the security updates. This stage is built for each
+# target platform (linux/amd64 and linux/arm64 are published, so Intel/AMD machines and Apple Silicon / ARM servers both work).
 FROM eclipse-temurin:21-jre
 
 LABEL org.opencontainers.image.title="SoapCLI" \
