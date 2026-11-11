@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.0 (unreleased)
+## 2.1.0
 
 A web UI and a Docker image. The command line client is unchanged.
 
