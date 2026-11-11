@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The web server now reads and discards what is left of a request body that is too large before answering `413`. Closing
+  the connection with unread data could make the operating system reset it and destroy the answer, so the browser showed
+  a network error instead of "The request is larger than 25 MB (--max-body-mb)".
+
 ## 2.1.0
 
 A web UI and a Docker image. The command line client is unchanged.

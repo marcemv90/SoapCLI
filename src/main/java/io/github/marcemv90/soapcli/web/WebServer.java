@@ -270,6 +270,7 @@ public final class WebServer implements AutoCloseable {
         if (length != null) {
             try {
                 if (Long.parseLong(length.trim()) > options.maxBodyBytes) {
+                    discardBody(ex);
                     return tooLarge();
                 }
             } catch (NumberFormatException ignored) {
@@ -277,6 +278,29 @@ public final class WebServer implements AutoCloseable {
             }
         }
         return null;
+    }
+
+    /** Most of a request body we are willing to read and throw away just to be able to answer it properly. */
+    private static final long DISCARD_LIMIT = 512L * 1024 * 1024;
+
+    /**
+     * Reads and discards what is left of the request body (up to {@link #DISCARD_LIMIT}) before an early answer such as
+     * "too large". Closing a connection that still has unread data makes the operating system send a TCP reset, which
+     * can destroy the answer before the client has read it: the browser would then report a network error instead of
+     * the 413 and its explanation. The JDK server only drains 64 KB by itself.
+     */
+    private static void discardBody(HttpExchange ex) {
+        byte[] buffer = new byte[64 * 1024];
+        long total = 0;
+        try {
+            InputStream in = ex.getRequestBody();
+            int n;
+            while (total < DISCARD_LIMIT && (n = in.read(buffer)) >= 0) {
+                total += n;
+            }
+        } catch (IOException ignored) {
+            // the client went away: nothing left to answer
+        }
     }
 
     private Response tooLarge() {
@@ -287,6 +311,7 @@ public final class WebServer implements AutoCloseable {
     private <T> T readJson(HttpExchange ex, Class<T> type) throws IOException {
         byte[] bytes = ex.getRequestBody().readNBytes((int) Math.min(options.maxBodyBytes + 1, Integer.MAX_VALUE - 8));
         if (bytes.length > options.maxBodyBytes) {
+            discardBody(ex);
             throw new SendError(413, "too-large", "The request is larger than "
                     + (options.maxBodyBytes / (1024 * 1024)) + " MB (--max-body-mb).");
         }
