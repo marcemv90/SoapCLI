@@ -14,7 +14,7 @@
     <url>https://github.com/marcemv90/SoapCLI</url>
 
     <properties>
-        <revision>1.1.0-SNAPSHOT</revision>
+        <revision>2.0.0-SNAPSHOT</revision>
         <!-- Lowest Java version the tool must run on. "release" (not source/target) makes javac reject newer APIs. -->
         <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

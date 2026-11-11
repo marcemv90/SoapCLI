@@ -15,7 +15,7 @@ on stderr, so a script can tell "the server said no" from "I could not even reac
 When the server answers with an error status that carries a body (a SOAP fault, typically with HTTP 500), the body is
 still printed on stdout, without a Java stack trace, and the exit code is 3.
 
-!!! warning "Changed in 1.1"
+!!! warning "Changed in 2.0"
     Earlier versions exited with the HTTP status itself. Exit codes are 8 bits wide on Linux and macOS, so a `500`
     became `244`, a `404` became `148`, and the documented `-ge 400` test could never succeed. Scripts that compared the
     exit code with HTTP statuses must now test for `3` and read the status from stderr (see below).

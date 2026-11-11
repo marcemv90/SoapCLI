@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name for the release (e.g. v1.2.3)'
+        description: 'Tag name for the release (e.g. 2.0.0; existing tags have no "v" prefix)'
         required: true
         type: string
       release_body:
@@ -37,7 +37,7 @@ jobs:
           java-version: "11"
           cache: maven
 
-      # The tag (v1.2.3) becomes the version stamped into the JAR and shown by `--version`.
+      # The tag (2.0.0) becomes the version stamped into the JAR and shown by `--version`; a leading "v" is tolerated.
       - name: Build and test with Maven
         run: mvn -B -ntp -Drevision="${TAG_NAME#v}" clean verify
 
