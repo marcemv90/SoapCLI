@@ -1,4 +1,4 @@
-site_name: Soap CLI
+site_name: SoapCLI
 site_description: "Command-line SOAP client"
 site_url: https://marcemv90.github.io/SoapCLI
 repo_url: https://github.com/marcemv90/SoapCLI
@@ -8,15 +8,20 @@ nav:
   - Home: index.md
   - Installation: installation-from-source.md
   - FAQ: faq.md
+  - Changelog: changelog.md
   - TO-DO: todo.md
+  - Architecture: architecture.md
   - CLI:
     - Overview: cli-overview.md
     - Basic usage: cli-basic-usage.md
+    - SOAP versions: cli-soap-versions.md
     - Attachments: cli-attachments.md
     - Placeholders: cli-placeholders.md
     - Authentication: cli-auth.md
+    - TLS: cli-tls.md
     - Profiles: cli-profiles.md
     - Proxy: cli-proxy.md
+    - Output: cli-output.md
     - Themes: cli-themes.md
     - Return codes & errors: cli-rc-and-errors.md
     - Debug: cli-debug.md

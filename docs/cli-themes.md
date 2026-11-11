@@ -1,11 +1,8 @@
----
-layout: default
-title: Themes
----
-
 # Themes
 
-`SoapCli` can colorize XML responses using different syntax highlighting themes. You choose the theme with the `--theme` flag or via profiles.
+`SoapCLI` can colorize XML output using different syntax highlighting themes. You choose the theme with the `--theme`
+flag or via profiles. (Whether colour is used at all is explained in [Output options](cli-output.md#colours): it is on
+by default only in an interactive terminal.)
 
 ## Using themes on the CLI
 
@@ -16,7 +13,10 @@ java -jar SoapCLI.jar \
   --theme dracula
 ```
 
-If no theme is specified (via CLI or profile), the default is `darcula`.
+If no theme is specified (via CLI or profile), the default is `darcula`. Theme names accept `solarized-dark`,
+`solarized_dark` and `solarizeddark` alike, in any case.
+
+Tags, attribute names and attribute values each get their own colour; comments are dimmed and text is left uncoloured.
 
 ## Using themes in profiles
 

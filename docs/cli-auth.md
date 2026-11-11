@@ -1,51 +1,17 @@
----
-layout: default
-title: Authentication
----
-
 # Authentication
 
-This page covers:
-
-- Using client certificates and custom trust via keystores.
-- HTTP Basic authentication options.
-
-## HTTPS and keystore options
-
-For HTTPS endpoints that require a client certificate (mutual TLS) or a custom trust configuration,
-you can specify a keystore:
-
-- `--keystore <file>` – keystore path (e.g. JKS, PKCS12).
-- `--keystore-type <type>` – keystore type, defaults to `JKS` if not overridden.
-- `--keystore-alias <alias>` – alias of the certificate/key to use.
-- `--keystore-password <password>` – keystore password (also used as key password by default).
-- `--keystore-alias-pkpass <password>` – private key password if different from the keystore password.
-
-Example:
-
-```bash
-java -jar SoapCLI.jar \
-  --endpoint https://secure.example.com/soap \
-  --request-file request.xml \
-  --keystore /home/user/certs/keystore.jks \
-  --keystore-type JKS \
-  --keystore-alias client-cert \
-  --keystore-password changeit
-```
-
-When a keystore is configured, all three of `keystoreType`, `keystoreAlias`, and `keystorePassword`
-must be provided (either directly via CLI flags or via a profile).
+This page covers HTTP-level authentication. For client certificates and trusting servers, see [TLS](cli-tls.md).
 
 ## HTTP Basic authentication
 
-Some SOAP endpoints require HTTP Basic authentication at the transport level. You can send a
-`Basic` `Authorization` header using either a direct value or an environment variable:
+Some SOAP endpoints require HTTP Basic authentication at the transport level. Send a `Basic` `Authorization` header with
+either a direct value or an environment variable:
 
 - `--auth-basic user:password` – sets `Authorization: Basic ...` using the given `user:password`.
-- `--auth-basic-env VAR` – reads `user:password` from the environment variable `VAR` and uses it
-  as the Basic credential.
+- `--auth-basic-env VAR` – reads `user:password` from the environment variable `VAR`.
 
-If both options are used, the explicit `--auth-basic` value takes precedence over `--auth-basic-env`.
+If both options are used, the explicit `--auth-basic` value takes precedence over `--auth-basic-env`, whatever their
+order. Credentials are sent preemptively, in UTF-8.
 
 Example (direct value):
 
@@ -67,7 +33,35 @@ java -jar SoapCLI.jar \
   --auth-basic-env SOAPCLI_BASIC_AUTH
 ```
 
-**Security note**: Putting credentials directly on the command line means they may appear in your
-shell history or process listings. Environment variables can reduce this exposure, but you should
-still treat them as sensitive. Consider using dedicated test accounts and avoid reusing production
-passwords.
+## Bearer tokens
+
+- `--auth-bearer <token>` – sends `Authorization: Bearer <token>`.
+- `--auth-bearer-env VAR` – reads the token from the environment variable `VAR`.
+
+Basic and Bearer cannot be combined. For any other scheme use `--header "Authorization: ..."`.
+
+## Profiles
+
+A profile can hold `authBasic` or `authBearer`, ideally as an environment variable reference so the secret is not stored
+in the file:
+
+```json
+{ "profiles": { "acceptance": { "endpoint": "https://acc.example.com/soap", "authBasic": "${ACC_CREDENTIALS}" } } }
+```
+
+See [Profiles](cli-profiles.md).
+
+## Keeping credentials safe
+
+- `--dry-run`, `--debug` and `-i` mask `Authorization`, `Cookie` and similar headers (`Authorization: Basic ****`).
+  Use `--show-secrets` only when you really need the values.
+- `--show-profile` and `--list-profiles-detailed` mask secrets too; a `${VAR}` reference is shown as written because it
+  is not a secret.
+- Credentials are **never** sent to another host: when `--follow-redirects` follows a redirect to a different host, port
+  or scheme, `Authorization` and `Cookie` are dropped.
+
+!!! warning
+    Putting credentials directly on the command line means they may appear in your shell history or process listings.
+    Prefer the `-env` variants or `${VAR}` references in profiles, consider dedicated test accounts, and avoid reusing
+    production passwords. Note that `--debug` also prints the **request body**, which may itself contain credentials
+    (WS-Security headers, for instance).

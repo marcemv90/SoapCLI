@@ -1,6 +1,0 @@
-title: SoapCli
-description: Small, dependency-light command line tool for sending SOAP requests over HTTP/HTTPS.
-# Use the official Cayman theme for GitHub Pages
-remote_theme: pages-themes/cayman@v0.2.0
-plugins:
-  - jekyll-seo-tag
