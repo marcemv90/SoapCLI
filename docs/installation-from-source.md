@@ -2,8 +2,10 @@
 
 ## Requirements
 
-- Java **11** or later to run `SoapCLI`. Check with `java -version`.
-- To build from source: a JDK 11+ and [Apache Maven](https://maven.apache.org/) 3.8+.
+- Java **11** or later to run `SoapCLI`. Check with `java -version`. No Java on the machine? Use the
+  [Docker image](docker.md) instead.
+- To build from source: a JDK 11+ and [Apache Maven](https://maven.apache.org/) 3.8+. Node is **not** needed: the web UI
+  is compiled and committed (see below).
 
 ## From GitHub releases
 
@@ -11,11 +13,11 @@ Get the pre-built JAR from the [releases page](https://github.com/marcemv90/Soap
 of your choice. Each release also has a `.sha256` file:
 
 ```bash
-sha256sum -c SoapCLI-2.0.0.jar.sha256
-java -jar SoapCLI-2.0.0.jar --version
+sha256sum -c SoapCLI-2.1.0.jar.sha256
+java -jar SoapCLI-2.1.0.jar --version
 ```
 
-That's it.
+That's it. Start the [web UI](web-ui.md) with `java -jar SoapCLI-2.1.0.jar serve`.
 
 ## Build from source
 
@@ -42,7 +44,7 @@ Useful variations:
 
 ```bash
 mvn clean package -DskipTests            # build without running the tests
-mvn clean package -Drevision=2.0.0       # stamp a version, shown by --version
+mvn clean package -Drevision=2.1.0       # stamp a version, shown by --version
 ```
 
 !!! note
@@ -57,6 +59,31 @@ java -jar target/SoapCLI.jar --help
 ```
 
 Once built, you can copy `target/SoapCLI.jar` anywhere you like and invoke it with `java -jar`.
+
+### 4. (Optional) Build the Docker image
+
+```bash
+docker build -t soapcli .
+docker run -p 127.0.0.1:8080:8080 soapcli
+```
+
+See [Docker](docker.md).
+
+### Changing the web UI
+
+The interface lives in `web-ui/` (React, TypeScript, Tailwind CSS and the free TailAdmin template). Its compiled output
+is committed under `src/main/resources/web`, which is why the Maven build needs no Node. To work on it:
+
+```bash
+cd web-ui
+npm ci
+npm run dev        # http://localhost:5173, proxying /api to a running `serve` on port 8080
+npm test           # engine tests
+npm run build      # recompile into ../src/main/resources/web, then commit the result
+```
+
+CI rebuilds the UI and fails if the committed output is out of date. The [architecture notes](architecture.md) explain
+how the pieces fit.
 
 ## Shortcuts
 

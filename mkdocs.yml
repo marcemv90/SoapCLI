@@ -7,6 +7,8 @@ repo_name: marcemv90/SoapCLI
 nav:
   - Home: index.md
   - Installation: installation-from-source.md
+  - Web UI: web-ui.md
+  - Docker: docker.md
   - FAQ: faq.md
   - Changelog: changelog.md
   - TO-DO: todo.md

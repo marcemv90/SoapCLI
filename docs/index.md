@@ -1,7 +1,10 @@
 # SoapCLI
 
-`SoapCLI` is a small command line tool for sending SOAP requests over HTTP/HTTPS. It is meant for the everyday case
-where opening a full GUI client is overkill: edit an XML file, run one command, read the answer.
+`SoapCLI` is a small tool for sending SOAP requests over HTTP/HTTPS. It is meant for the everyday case where opening a
+full GUI client is overkill: edit an XML file, run one command, read the answer. You can use it from the **command line**,
+from the **[web UI](web-ui.md)** built into the same JAR, or from a **[Docker image](docker.md)** that does both.
+
+![The SoapCLI web UI](assets/img/web-ui/request-light.png)
 
 It is designed to be:
 
@@ -10,6 +13,7 @@ It is designed to be:
   something, and colour is only used on a terminal.
 - **Flexible** – SOAP 1.1 and 1.2, HTTPS with client certificates and custom trust, proxies, MTOM attachments and
   per-environment profiles.
+- **Usable by anyone** – a browser UI for people who prefer one, with the same engine underneath.
 
 ---
 
@@ -20,8 +24,9 @@ It is designed to be:
 
 ## Requirements
 
-- Java **11** or later to run the JAR (a JRE is enough).
-- A JDK 11+ and Maven (or Docker) only if you want to build it from source.
+- Java **11** or later to run the JAR (a JRE is enough), **or** Docker, which needs no Java on the host.
+- A JDK 11+ and Maven (or Docker) only if you want to build it from source. The web UI is already compiled inside the
+  repository, so Node is only needed to change the interface.
 
 ---
 
@@ -41,10 +46,15 @@ It is designed to be:
 - Named profiles for environments (`acceptance`, `production`...), with inheritance (`extends`) and environment
   variable references so secrets need not live in the file.
 - `--dry-run` and `--debug` that show the real request with credentials masked.
+- **Web UI** (`serve`): XML editor, attachments uploaded from the browser, variables, history and library, copy as
+  CLI / Docker / curl; calls from your browser or through the SoapCLI server ([details](web-ui.md)).
+- **Docker image**: the UI by default, the command line client on demand ([details](docker.md)).
 
 ## Where to start
 
 - [Installation](installation-from-source.md)
+- [Web UI](web-ui.md) – the browser client, and how to share it with a team
+- [Docker](docker.md) – the image: UI by default, command line client on demand
 - [Basic usage](cli-basic-usage.md)
 - [SOAP versions and SOAPAction](cli-soap-versions.md)
 - [Profiles](cli-profiles.md) – save the settings of each environment once

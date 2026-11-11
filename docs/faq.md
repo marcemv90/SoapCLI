@@ -104,3 +104,39 @@ Use `--raw` if the tool needs the exact bytes the server sent.
 
 Check the warning on stderr: the name must match a `___NAME:default___` placeholder in the request exactly (names are
 case-sensitive). See [Placeholders](cli-placeholders.md).
+
+## The web UI says "The browser could not reach the service"
+
+When the UI sends from **your browser**, the service must allow it with CORS headers, and most SOAP services do not.
+Press *Check if the host answers* to tell a CORS block from an unreachable host, and *Send through the SoapCLI server* to
+send the same request from the server, which is not subject to CORS. Also: a page served over HTTPS cannot call `http://`
+URLs, and a self-signed certificate must be accepted in the browser first (open the URL in a tab). See
+[Web UI](web-ui.md#cors-why-a-call-from-the-browser-can-fail).
+
+## Can I use the web UI against a service that needs a client certificate or a proxy?
+
+Yes, through the **SoapCLI server** transport: put the certificates and proxy in a [profile](cli-profiles.md) on the
+machine that runs `serve` and choose it in the UI. A browser cannot be given a client certificate by a web page.
+
+## Java is not installed on this machine
+
+Use the [Docker image](docker.md) instead: `docker run -p 127.0.0.1:8080:8080 ghcr.io/marcemv90/soapcli` for the web UI, or
+`docker run --rm -v "$PWD:/work" ghcr.io/marcemv90/soapcli --endpoint ... --request-file request.xml` for the command
+line client.
+
+## The container cannot reach `localhost:8081` on my machine
+
+Inside a container `localhost` is the container. Use `host.docker.internal` instead (on Linux add
+`--add-host=host.docker.internal:host-gateway`), or `--network host`. If you use the UI's *This browser* transport this
+does not apply, because the call is made by your browser, not by the container.
+
+## Can the web UI live under a path such as `/soapcli/`?
+
+Yes: the interface only uses relative URLs and hash routing. Proxy `/soapcli/` to the server's `/`
+([example](docker.md#behind-a-reverse-proxy)).
+
+## How do I let a team use it without exposing my credentials?
+
+Run one `serve` (or one container) with a login, `--allow-host` for the systems it may call, HTTPS in front of it, and the
+secrets in the profiles file or the environment of the server; the browser only ever sees profiles with their secrets
+masked. See [Sharing it with a team](web-ui.md#sharing-it-with-a-team).

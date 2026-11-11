@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.1.0 (unreleased)
+
+A web UI and a Docker image. The command line client is unchanged.
+
+### Added
+
+- **[Web UI](web-ui.md)** inside the same JAR: `java -jar SoapCLI.jar serve`. Built with React and the TailAdmin
+  template; nothing is loaded from the internet. XML editor, headers, Basic/Bearer authentication, `___NAME___`
+  variables, **attachments uploaded from the browser** (inline Base64 or MTOM), SOAP 1.1/1.2 with the SOAP action, a
+  formatted response with headers and the exact request that was built, history and a saved library, light and dark
+  themes, and *Copy as* SoapCLI command, Docker command or `curl`.
+- **Two ways to send**: from **your browser** (default; reaches anything your machine reaches, needs the service to allow
+  CORS, and the UI explains and diagnoses CORS failures) or through the **SoapCLI server** (client certificates, trust
+  stores, proxies, skipping TLS checks, server [profiles](cli-profiles.md) with their secrets kept on the server).
+- **`serve`** options for shared deployments: a login (`--ui-user`, `--ui-password` / `--ui-password-env`), an allow-list of
+  destinations (`--allow-host`, also checked on redirects), `--no-insecure-tls`, `--max-body-mb`, `--max-response-mb`,
+  and the equivalent `SOAPCLI_*` environment variables. `healthcheck` for container probes.
+- **[Docker image](docker.md)**: the UI by default, the command line client with any other arguments
+  (`docker run --rm -v "$PWD:/work" IMAGE --endpoint ... --request-file request.xml`), non-root, with a health check,
+  `/config` for profiles and `/work` for files; a `compose.yaml`; published to `ghcr.io` on each release.
+- `cli` subcommand (`docker run IMAGE cli --version`) to select the command line client explicitly.
+- Core: `HostPolicy` (destination allow-list) and a maximum response size, used by the web server.
+- `THIRD_PARTY_NOTICES.md` with the licences of the bundled interface.
+
+### Notes
+
+- Starting the JAR with `serve`, `healthcheck` or `cli` as the first argument now means something; no existing option
+  starts with those words, so existing command lines are not affected.
+- The UI is compiled and committed (`src/main/resources/web`), so building the JAR still needs only a JDK and Maven.
+
 ## 2.0.0
 
 A large clean-up release: the tool was rewritten into a tested core plus a thin command line layer, several things that

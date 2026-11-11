@@ -1,6 +1,6 @@
 # Architecture
 
-Notes for contributors, and for the planned web UI.
+Notes for contributors: how the engine, the command line and the web UI fit together.
 
 ## Layout
 
@@ -8,19 +8,29 @@ Notes for contributors, and for the planned web UI.
 io.github.marcemv90.soapcli
 ├── core   the engine. No System.out/err, no System.exit, no terminal knowledge.
 │   ├── CallConfig, TransportOptions, TlsConfig, ProxyConfig   what the user asked for (plain fields)
+│   ├── HostPolicy                                             allow-list of destination hosts (checked on every hop)
 │   ├── Profiles, Profile                                      named presets: extends, ${ENV}, masking
 │   ├── RequestBuilder → PreparedRequest                       placeholders, SOAP version, attachments, headers
 │   ├── SoapClient → SoapResponse                              HTTP(S) transport, redirects, errors
 │   ├── TlsSupport, ProxySupport                               key/trust stores, --insecure, proxy auth
 │   ├── MultipartBody, CidReplacer                             MTOM/XOP and attachments
 │   └── XmlScanner, XmlFormat, XmlCharsets, Placeholders ...   XML helpers (no DOM, no DTDs)
-└── cli    the command line front end
-    ├── Main, Cli                                              wiring and the run loop (Cli returns the exit code)
-    ├── Options, OptionSpec, ArgParser                         one option table drives parsing AND --help
-    └── ResponsePrinter, RequestPreview, AnsiColorizer ...     presentation
+├── cli    the command line front end
+│   ├── Main, Cli                                              wiring and the run loop (Cli returns the exit code)
+│   ├── Options, OptionSpec, ArgParser                         one option table drives parsing AND --help
+│   └── ResponsePrinter, RequestPreview, AnsiColorizer ...     presentation
+└── web    the web server behind `serve`
+    ├── ServeCommand, ServeOptions                             `serve` / `healthcheck`: options, env defaults, banner
+    ├── WebServer                                              JDK com.sun.net.httpserver: routing, security headers,
+    │                                                          login, static files from the classpath (/web)
+    └── ApiService, ApiModel                                   the JSON API over the engine, and its DTOs
+
+web-ui/                       the interface: React + TypeScript + Tailwind + TailAdmin; builds into
+                              src/main/resources/web, which the jar embeds
 ```
 
-The dependency only goes one way: `cli` uses `core`, never the opposite.
+The dependency only goes one way: `cli` and `web` use `core`, never the opposite, and `cli` and `web` do not know each
+other (`Main` starts one or the other).
 
 ## The flow of one call
 
@@ -68,29 +78,71 @@ set (`sun.net.http.allowRestrictedHeaders`, so `Host` and friends can be overrid
 `jdk.http.auth.tunneling.disabledSchemes`, so Basic proxy authentication works for HTTPS); both must be set before the
 JDK's HTTP classes are first used.
 
-## Notes for the web UI
+## The web UI
 
-What is already in place for it:
+`java -jar SoapCLI.jar serve` starts `web.WebServer` (the JDK's built-in HTTP server, so there is still one runtime
+dependency). It serves two things:
 
-- `CallConfig` has only public fields, so a JSON request from a browser can be mapped onto it directly.
-- `Profiles` loads, resolves (`extends`, `${ENV}`) and describes profiles without any CLI involvement; `describe` returns
-  a copy with secrets masked, which is what a UI should show.
-- `PreparedRequest` and `SoapResponse` are plain data, ready to be serialised as the "what was sent / what came back"
-  view.
+- **The interface**, static files under `/web/` in the classpath. They are the compiled output of `web-ui/`, committed to
+  the repository, so the Maven build needs neither Node nor a network. CI rebuilds them and fails if the result differs
+  from what is committed. File names are matched against a strict pattern (no dot segments, known extensions only);
+  everything under `assets/` is immutable and cached.
+- **A JSON API** over the engine, used by the optional *SoapCLI server* transport.
 
-What will need care when it is added:
+| Route | |
+|---|---|
+| `GET /healthz` | liveness (no login), used by the Docker `HEALTHCHECK` |
+| `GET /api/info` | version, limits, allowed destinations, whether insecure TLS is allowed, profiles file |
+| `GET /api/profiles` | profiles with secrets masked (`Profiles.describe`) |
+| `POST /api/send` | build and send a request (`ApiModel.SendRequest` → `SendResponse`) |
+| `POST /api/preview` | the request that would be sent, with credentials masked |
+| `POST /api/format` | pretty-print XML (same code as the CLI) |
 
-- **A server that sends HTTP requests on behalf of its users is an SSRF machine.** It needs authentication in front of
-  it (a reverse proxy with SSO is the simplest), and ideally an allow-list of target hosts.
-- **Secrets stay on the server.** Profile passwords are read from the profiles file or the environment; the API must
-  return masked profiles only, and requests must refer to profiles by name.
-- **Concurrency.** Calls run on different threads; per-call TLS contexts are created for each call (cache them if it
-  becomes a cost) and the process-wide settings above are shared.
-- **Packaging.** The JDK's built-in `com.sun.net.httpserver` is enough for a small UI and keeps the "one JAR, one
-  dependency" property; the Docker image would be a slim Java 11+ runtime, a non-root user, the JAR, a mounted profiles
-  file and secrets passed as environment variables.
-- A natural next step is to turn `core` into its own Maven module so the CLI and the web UI are two thin front ends over
-  it.
+### Two transports, one engine
+
+The browser has its own TypeScript port of the request building (`web-ui/src/lib`: XML scanner, placeholders, SOAP
+version detection, charsets, CID replacement, MTOM) and sends with `fetch`; the server transport sends the form to
+`/api/send` and `core` does the work. Both sides have tests for the same behaviours (placeholders, SOAP version, charsets, CID
+replacement, MTOM bytes); when you change one, change the other. The *Request* tab always shows what the active transport will really send.
+
+### Security model
+
+A server that sends HTTP requests for whoever can reach it is an SSRF machine, so the defaults are conservative:
+
+- Listens on `127.0.0.1` unless told otherwise; then any `Host` header other than a loopback name is refused (DNS
+  rebinding). Non-loopback without a login prints a warning.
+- Optional HTTP Basic login for everything except `/healthz` (constant-time comparison). Use HTTPS in front of it.
+- `POST` must be `application/json`: a cross-site form or `text/plain` request is rejected with `415`, and a cross-site
+  `fetch` with that type needs a CORS preflight that the server never approves.
+- `HostPolicy` (`--allow-host`) is checked before every hop of a call, including redirects; sizes of request and response
+  (`--max-body-mb`, `--max-response-mb`) and timeouts are capped; `--no-insecure-tls` removes the "skip checks" switch.
+- Secrets never go to the browser: profiles are described masked, and a request refers to a profile by name. Attachments
+  arrive as Base64, are written to a private temporary directory with server-chosen names and deleted afterwards.
+- `Content-Security-Policy: default-src 'none'; script-src 'self'; ... connect-src http: https:` (the last one because the
+  browser transport has to reach other hosts), plus `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and
+  `Cross-Origin-Resource-Policy: same-origin`.
+- The access log has method, path, status and time, never bodies or credentials.
+
+### Docker
+
+The `Dockerfile` is multi-stage (Maven + JDK 21 to build, a slim JRE 21 to run; the jar still targets Java 11), runs as an
+unprivileged user, and uses `ENTRYPOINT java -jar SoapCLI.jar` with `CMD ["serve"]`, so the image starts the UI and any
+other arguments select the command line client. `healthcheck` is a subcommand of the jar, so the image needs no `curl`.
+The release workflow publishes `ghcr.io/<owner>/soapcli:<version>` and `:latest`.
+
+### Working on the UI
+
+```bash
+cd web-ui && npm ci
+npm run dev       # Vite on :5173, proxying /api to `java -jar SoapCLI.jar serve` on :8080
+npm test          # Vitest: the engine (xml, placeholders, soap, charsets, cid, request, transports)
+npm run build     # typecheck + build into ../src/main/resources/web (deterministic: commit the result)
+```
+
+Design notes: React 19 with hash routing (`#/request`, `#/library`, `#/settings`) and relative URLs, so it works from any
+path prefix; `components/ui` and `icons` are the TailAdmin components the interface uses (MIT, see
+`THIRD_PARTY_NOTICES.md`); the font is bundled, so nothing is fetched from a CDN. Browser storage holds drafts, saved
+requests, history and settings, never secrets or attachment contents.
 
 ## Tests
 
@@ -102,3 +154,8 @@ What will need care when it is added:
 - Real TLS and mutual TLS with certificates generated by the JDK's `keytool` (`TestPki`), and an authenticating HTTP
   proxy that supports `CONNECT` (`TestProxy`).
 - `Cli` is driven in-process, asserting on stdout, stderr and the exit code.
+- `WebServer` is started on a free port and exercised over HTTP: routing, login, `Host` and content-type checks, the
+  destination policy, size limits, attachments, and static file serving.
+
+`npm test` in `web-ui` runs the Vitest suite for the browser engine. CI also builds the Docker image and checks both
+modes (command line with its exit codes, and the UI with and without a login).

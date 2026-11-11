@@ -4,14 +4,24 @@
   <img src="img/SoapCLI-logo-01.png" alt="SoapCLI logo" width="40%" />
 </p>
 
-`SoapCLI` is a small command line tool for sending SOAP requests over HTTP/HTTPS: a quick, scriptable
-alternative to a GUI client for everyday calls.
+`SoapCLI` is a small tool for sending SOAP requests over HTTP/HTTPS: a quick, scriptable alternative to a GUI client for
+everyday calls. Use it from the **command line**, from a **web UI** that ships inside the same JAR, or from a **Docker
+image** that does both.
+
+<p align="center">
+  <img src="docs/assets/img/web-ui/request-light.png" alt="The SoapCLI web UI" width="85%" />
+</p>
 
 - **Simple** – one JAR (Java 11+), straightforward options, one dependency (Jackson, to read profiles).
 - **Script-friendly** – the response body is the only thing on stdout, the HTTP status goes to stderr, and the exit code
   tells you what happened. Colour is only used on a terminal.
 - **Flexible** – SOAP 1.1 and 1.2 (auto-detected), custom headers, Basic/Bearer auth, client certificates and custom
   trust stores, HTTP/SOCKS proxies, MTOM attachments, placeholders and per-environment profiles.
+- **A web UI, embedded** – `java -jar SoapCLI.jar serve` opens a professional [TailAdmin](https://tailadmin.com)-based
+  client: XML editor, attachments you upload from the browser, variables, history and a library, light and dark themes.
+  Everything it needs is inside the JAR; calls are made from your browser, so it reaches anything your machine reaches.
+- **Docker** – one image, the UI by default and the command line client on demand, for machines that have Docker but not
+  Java.
 
 ---
 
@@ -59,6 +69,28 @@ java -jar SoapCLI.jar --profile acceptance --request-file request.xml --arg ORDE
 java -jar SoapCLI.jar --profile acceptance --request-file request.xml --dry-run
 ```
 
+### Web UI
+
+```bash
+java -jar SoapCLI.jar serve          # then open http://127.0.0.1:8080
+```
+
+Write or paste a request, add attachments, press **Send**. By default the call is made **from your browser** (so it
+works with anything on your network), which requires the service to allow CORS; if it does not, one click sends the same
+request through the SoapCLI server instead, which also unlocks client certificates, proxies and profiles. See the
+[Web UI documentation](https://marcemv90.github.io/SoapCLI/web-ui/).
+
+### Docker
+
+```bash
+docker run -d -p 127.0.0.1:8080:8080 ghcr.io/marcemv90/soapcli                  # the web UI (default)
+docker run --rm -v "$PWD:/work" ghcr.io/marcemv90/soapcli \
+  --endpoint https://example.com/soap --request-file request.xml                # the command line client
+```
+
+For a shared server: set a login and the allowed destinations, and put it behind HTTPS. See the
+[Docker documentation](https://marcemv90.github.io/SoapCLI/docker/) and `compose.yaml`.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -84,11 +116,24 @@ purpose (most notably the exit codes).
 ```text
 src/main/java/io/github/marcemv90/soapcli/
   core/   the SOAP client: request building, HTTP transport, TLS, proxy, profiles, XML helpers.
-          No console I/O and no System.exit, so it can be reused (a web UI is planned, see docs/architecture.md).
+          No console I/O and no System.exit, so it is shared by both front ends.
   cli/    the command line front end: option parsing, output, colours, exit codes.
+  web/    the web server (JDK built-in, no extra dependency): JSON API, static files, login, destination policy.
+src/main/resources/web/   the compiled web UI, embedded in the JAR (generated: see web-ui/).
 src/test/java/...   JUnit 5 tests, including real TLS / mutual TLS / authenticating-proxy tests on local sockets.
+web-ui/             source of the web UI (React, TypeScript, Tailwind, TailAdmin) and its tests.
+Dockerfile, compose.yaml   the image: web UI by default, command line client on demand.
 docs/               MkDocs site.
 ```
+
+The compiled UI is committed, so `mvn clean package` needs neither Node nor network access. To change the interface, see
+[web-ui/README.md](web-ui/README.md).
+
+### Third-party software
+
+The web UI is based on the free [TailAdmin](https://tailadmin.com) template (MIT) and bundles the Outfit font (SIL OFL)
+and a set of open-source npm packages; the Java side uses Jackson (Apache 2.0). Licences and notices are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ### Building and previewing the documentation
 
