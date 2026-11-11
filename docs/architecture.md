@@ -128,7 +128,11 @@ A server that sends HTTP requests for whoever can reach it is an SSRF machine, s
 The `Dockerfile` is multi-stage (Maven + JDK 21 to build, a slim JRE 21 to run; the jar still targets Java 11), runs as an
 unprivileged user, and uses `ENTRYPOINT java -jar SoapCLI.jar` with `CMD ["serve"]`, so the image starts the UI and any
 other arguments select the command line client. `healthcheck` is a subcommand of the jar, so the image needs no `curl`.
-The release workflow publishes `ghcr.io/<owner>/soapcli:<version>` and `:latest`.
+The release workflow publishes `ghcr.io/<owner>/soapcli:<version>` and `:latest` as a manifest list for `linux/amd64` and
+`linux/arm64`. The build stage is pinned to `$BUILDPLATFORM` (the jar is platform independent, so Maven runs once and
+natively); only the runtime stage is built per platform, with QEMU doing the few `RUN` steps of the arm64 one. CI builds
+and runs the arm64 image under emulation. To republish just the image of an existing tag, run the release workflow with
+`docker_only` set (it skips the GitHub release and the jar and builds from the selected ref).
 
 ### Working on the UI
 

@@ -473,11 +473,33 @@ class WebServerTest {
         assertTrue(r.body().contains("disabled"));
     }
 
+    /**
+     * The server answers before the whole body has been sent. If it closed the connection with unread data the TCP reset
+     * could destroy the 413 and the client would only see "connection reset": the body has to be well beyond what the
+     * JDK server drains by itself (64 KB) and what loopback buffers swallow, so that this fails without the fix.
+     */
+    private static final int WAY_TOO_BIG = 16 * 1024 * 1024;
+
     @Test
     void oversizedRequestsAreRefused() throws Exception {
         WebServer s = start("--max-body-mb", "1");
-        String big = "{\"endpoint\":\"http://127.0.0.1:1/\",\"body\":\"" + "x".repeat(2 * 1024 * 1024) + "\"}";
+        String big = "{\"endpoint\":\"http://127.0.0.1:1/\",\"body\":\"" + "x".repeat(WAY_TOO_BIG) + "\"}";
         HttpResponse<String> r = post(s, "/api/send", "application/json", big);
+        assertEquals(413, r.statusCode());
+        assertEquals("too-large", JSON.readTree(r.body()).get("error").get("category").asText());
+    }
+
+    @Test
+    void oversizedRequestsWithoutAContentLengthAreRefusedToo() throws Exception {
+        WebServer s = start("--max-body-mb", "1");
+        byte[] big = ("{\"endpoint\":\"http://127.0.0.1:1/\",\"body\":\"" + "x".repeat(WAY_TOO_BIG) + "\"}")
+                .getBytes(StandardCharsets.UTF_8);
+        // an input stream has no known length, so the client sends it chunked and the server cannot tell from the headers
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + s.port() + "/api/send"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new java.io.ByteArrayInputStream(big)))
+                .build();
+        HttpResponse<String> r = client.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(413, r.statusCode());
         assertEquals("too-large", JSON.readTree(r.body()).get("error").get("category").asText());
     }
