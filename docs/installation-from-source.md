@@ -11,8 +11,8 @@ Get the pre-built JAR from the [releases page](https://github.com/marcemv90/Soap
 of your choice. Each release also has a `.sha256` file:
 
 ```bash
-sha256sum -c SoapCLI-v1.2.3.jar.sha256
-java -jar SoapCLI-v1.2.3.jar --version
+sha256sum -c SoapCLI-2.0.0.jar.sha256
+java -jar SoapCLI-2.0.0.jar --version
 ```
 
 That's it.
@@ -42,7 +42,7 @@ Useful variations:
 
 ```bash
 mvn clean package -DskipTests            # build without running the tests
-mvn clean package -Drevision=1.2.3       # stamp a version, shown by --version
+mvn clean package -Drevision=2.0.0       # stamp a version, shown by --version
 ```
 
 !!! note

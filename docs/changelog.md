@@ -1,9 +1,14 @@
 # Changelog
 
-## 1.1.0
+## 2.0.0
 
 A large clean-up release: the tool was rewritten into a tested core plus a thin command line layer, several things that
 did not work were fixed, and a few behaviours changed on purpose. **Read "Behaviour changes" before upgrading scripts.**
+
+!!! note "Why 2.0.0?"
+    The exit codes changed (see below), and the first version documented that they mirror the HTTP status, so scripts
+    that rely on that break. That makes this a major version. The same code was briefly published as 1.1.0; if you
+    downloaded that build, use 2.0.0 instead.
 
 ### Behaviour changes
 
