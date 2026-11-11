@@ -48,7 +48,7 @@ HTTP headers:
 Content-Type: text/xml; charset=utf-8
 Accept: text/xml, application/soap+xml, */*;q=0.9
 SOAPAction: "urn:GetOrder"
-User-Agent: SoapCLI/2.0.0
+User-Agent: SoapCLI/2.1.0
 Content-Length: 412
 ...
 ```
