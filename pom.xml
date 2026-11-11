@@ -3,25 +3,38 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.example</groupId>
+    <groupId>io.github.marcemv90</groupId>
     <artifactId>SoapCLI</artifactId>
-    <version>1.0.0</version>
+    <!-- Override at build time with -Drevision=1.2.3 (the release workflow does this from the tag). -->
+    <version>${revision}</version>
     <packaging>jar</packaging>
 
     <name>SoapCLI</name>
+    <description>Command-line SOAP client</description>
+    <url>https://github.com/marcemv90/SoapCLI</url>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+        <revision>1.1.0-SNAPSHOT</revision>
+        <!-- Lowest Java version the tool must run on. "release" (not source/target) makes javac reject newer APIs. -->
+        <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <mainClass>SoapCLI</mainClass>
+        <mainClass>io.github.marcemv90.soapcli.cli.Main</mainClass>
+        <jackson.version>2.21.8</jackson.version>
+        <junit.version>5.14.4</junit.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.15.2</version>
+            <version>${jackson.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -31,17 +44,23 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.15.0</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
                 <configuration>
-                    <source>${maven.compiler.source}</source>
-                    <target>${maven.compiler.target}</target>
+                    <!-- Same switch the CLI sets at startup; lets tests send Host and other restricted headers. -->
+                    <argLine>-Dsun.net.http.allowRestrictedHeaders=true</argLine>
                 </configuration>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.6.0</version>
+                <version>3.8.0</version>
                 <configuration>
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
@@ -49,6 +68,8 @@
                     <archive>
                         <manifest>
                             <mainClass>${mainClass}</mainClass>
+                            <!-- Puts Implementation-Version in the manifest so the version flag can report it. -->
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
                         </manifest>
                     </archive>
                     <appendAssemblyId>false</appendAssemblyId>
