@@ -1,11 +1,6 @@
----
-layout: default
-title: Placeholders
----
-
 # Placeholders
 
-`SoapCli` lets you parameterize your SOAP XML using **placeholders with built-in defaults**.
+`SoapCLI` lets you parameterize your SOAP XML using **placeholders with built-in defaults**.
 This is useful when you want to:
 
 - Reuse the same XML template across environments.
@@ -25,10 +20,14 @@ ___NAME:defaultValue___
 
 Where:
 
-- `NAME` is the placeholder key.
-- `defaultValue` is used when you do **not** provide an override on the CLI.
+- `NAME` is the placeholder key: it starts with a letter or `_` and then uses letters, digits, `_`, `.` or `-`.
+- `defaultValue` is used when you do **not** provide an override. It may be empty (`___NAME:___`), may span several
+  lines and ends at the next `___`.
 
-## Overriding placeholders with `--arg`
+Because the name is restricted, a stray `___` elsewhere in the document (a separator in some text, a Base64 blob...) is
+left alone instead of being mistaken for a placeholder.
+
+## Overriding placeholders
 
 At runtime, you override placeholders using the repeatable `--arg` option:
 
@@ -36,8 +35,20 @@ At runtime, you override placeholders using the repeatable `--arg` option:
 --arg NAME=VALUE
 ```
 
-Because replacement happens on the raw XML text **before** any attachment or MTOM processing,
-a placeholder can be used almost anywhere in the XML:
+- The value is inserted **exactly as written** (`--arg` is replacing raw text, which is what allows the cases below).
+- An empty value is allowed: `--arg NAME=` replaces the placeholder with nothing.
+- Leading and trailing spaces in the value are kept.
+- `--placeholder` is an alias of `--arg`.
+
+When the value is text that must be valid XML content (it may contain `&`, `<`, quotes...) use `--arg-text`, which
+escapes it for you:
+
+```bash
+--arg-text 'CUSTOMER=Tom & Jerry <3'      # inserted as: Tom &amp; Jerry &lt;3
+```
+
+Because replacement happens on the raw XML text **before** any attachment or MTOM processing, a placeholder can be used
+almost anywhere in the XML:
 
 - Element names.
 - Attribute names and values.
@@ -65,5 +76,19 @@ java -jar SoapCLI.jar \
   --arg CID=abc123
 ```
 
-If you omit `--arg TAG=...` or `--arg CID=...`, the defaults from the XML (`order` and
-`defaultCid` in the example above) are used automatically.
+If you omit `--arg TAG=...` or `--arg CID=...`, the defaults from the XML (`order` and `defaultCid` in the example above)
+are used automatically.
+
+## Catching typos
+
+If an `--arg` name does not match any placeholder in the request (for example `--arg CIDD=1` instead of `CID`), a
+warning is printed on stderr, since the value would otherwise be silently ignored:
+
+```text
+Warning: Argument 'CIDD' is not used by any ___CIDD:default___ placeholder in the request
+```
+
+## Placeholders in profiles
+
+A profile can set values for the placeholders with an `args` object, so each environment carries its own IDs; command
+line `--arg` values override them. See [Profiles](cli-profiles.md).

@@ -1,10 +1,9 @@
-name: Release SoapCli
+name: Release SoapCLI
 
 on:
   release:
     types:
       - published
-      - edited
   workflow_dispatch:
     inputs:
       tag_name:
@@ -21,7 +20,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Build and publish SoapCli JAR
+    name: Build and publish SoapCLI JAR
     runs-on: ubuntu-latest
     env:
       TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.event.release.tag_name }}
@@ -36,27 +35,25 @@ jobs:
         with:
           distribution: temurin
           java-version: "11"
+          cache: maven
 
-      - name: Cache Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-m2-
+      # The tag (v1.2.3) becomes the version stamped into the JAR and shown by `--version`.
+      - name: Build and test with Maven
+        run: mvn -B -ntp -Drevision="${TAG_NAME#v}" clean verify
 
-      - name: Build with Maven
-        run: mvn -B clean package
-
-      - name: Prepare SoapCli artifact
+      - name: Prepare SoapCLI artifacts
         run: |
           mkdir -p dist
           cp target/SoapCLI.jar "dist/SoapCLI-${TAG_NAME}.jar"
+          cd dist
+          sha256sum "SoapCLI-${TAG_NAME}.jar" > "SoapCLI-${TAG_NAME}.jar.sha256"
 
-      - name: Upload SoapCli JAR to GitHub Release
+      - name: Upload SoapCLI JAR and checksum to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/SoapCLI-${{ env.TAG_NAME }}.jar
+          files: |
+            dist/SoapCLI-${{ env.TAG_NAME }}.jar
+            dist/SoapCLI-${{ env.TAG_NAME }}.jar.sha256
           tag_name: ${{ env.TAG_NAME }}
           body: ${{ env.RELEASE_BODY }}
         env:
