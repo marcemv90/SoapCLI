@@ -173,7 +173,8 @@ class CliTest {
         assertEquals("", help.err);
         Result version = run("--version");
         assertEquals(0, version.code);
-        assertEquals("SoapCLI dev\n", version.out);
+        // println uses the platform's line separator ("\r\n" on Windows), which is right for a console
+        assertEquals("SoapCLI dev" + System.lineSeparator(), version.out);
     }
 
     // ---- request side ---------------------------------------------------------------------------------------------
