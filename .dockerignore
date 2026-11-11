@@ -1,0 +1,12 @@
+# Only pom.xml and src/ are needed: the web UI is compiled and committed under src/main/resources/web.
+.git
+.github
+target
+web-ui
+docs
+img
+site
+*.md
+Dockerfile.docs
+mkdocs.yml
+compose.yaml

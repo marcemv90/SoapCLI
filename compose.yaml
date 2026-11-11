@@ -1,0 +1,28 @@
+# docker compose up -d      then open http://localhost:8080
+#
+# The web UI of SoapCLI. By default only this machine can reach it. Before publishing the port on a network,
+# set a login (SOAPCLI_UI_USER / SOAPCLI_UI_PASSWORD) and, if you can, the destinations it may call.
+services:
+  soapcli:
+    image: ghcr.io/marcemv90/soapcli:latest
+    # build: .                       # build from this checkout instead of pulling the image
+    ports:
+      - "127.0.0.1:8080:8080"        # use "8080:8080" to publish on the network (set a login first!)
+    environment:
+      # Put these in a .env file next to this one; an empty value means "not set".
+      SOAPCLI_UI_USER: ${SOAPCLI_UI_USER:-}
+      SOAPCLI_UI_PASSWORD: ${SOAPCLI_UI_PASSWORD:-}
+      # Only these destinations may be called, comma separated, e.g. "*.corp.example.com,10.1.*". Empty = any.
+      SOAPCLI_ALLOWED_HOSTS: ${SOAPCLI_ALLOWED_HOSTS:-}
+      # Secrets referenced from profiles as ${ACC_CREDENTIALS}:
+      # ACC_CREDENTIALS: ${ACC_CREDENTIALS:-}
+    volumes:
+      - ./config:/config:ro          # profiles.json (optional): see the documentation on profiles
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
