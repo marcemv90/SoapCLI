@@ -1,0 +1,24 @@
+{
+  // Options for the placeholders (___NAME:default___) of a request. A placeholder that is listed here is a dropdown in
+  // the web UI: the request's own default, each option below, and "Custom value...". Edit this file by hand, or on
+  // the Placeholders page of the UI (which leaves these comments alone).
+  //
+  // An option is a value, or { "value": "...", "label": "..." } when the dropdown should show something friendlier.
+  "placeholders": {
+    "ENV": {
+      "description": "The environment the request is about",
+      "options": ["demo", "acceptance", { "value": "production", "label": "Production (careful)" }]
+    },
+    "ORDER_ID": {
+      "description": "Orders of the demo data set",
+      "options": ["1001", "1002", { "value": "2001", "label": "Large order" }]
+    },
+    "COUNTRY": {
+      "options": [
+        { "value": "ES", "label": "Spain" },
+        { "value": "NL", "label": "Netherlands" },
+        { "value": "DE", "label": "Germany" }
+      ]
+    }
+  }
+}

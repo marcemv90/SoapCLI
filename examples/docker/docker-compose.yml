@@ -1,0 +1,50 @@
+# SoapCLI web UI with everything it can use, ready to edit.
+#
+#   docker compose up -d       then open http://localhost:8080
+#   docker compose down        to stop it
+#
+# What is in this folder (every path below is relative to it):
+#   soapcli.env   the container's environment: the login, where it may call, and the secrets the profiles use
+#   config/       becomes /config: profiles.json and placeholders.json (the UI can edit them), and certs/
+#   work/         becomes /work, read-only: the request files the profiles point to, and the files the UI can attach
+#   mock/         a tiny SOAP service to try everything without a real one (the `mock` service below)
+name: soapcli-example
+
+services:
+  soapcli:
+    image: ghcr.io/marcemv90/soapcli:latest     # or pin a release, e.g. :2.2.0
+    ports:
+      - "127.0.0.1:8080:8080"                   # this machine only; "8080:8080" publishes it on the network (set a login first!)
+    env_file:
+      - soapcli.env
+    environment:
+      # Lets the UI edit the files in ./config. Inside a container the server listens on a network address, so editing is
+      # off unless it is asked for. Delete this line if the UI should only read them (and mount ./config with :ro).
+      SOAPCLI_ALLOW_CONFIG_EDIT: "true"
+    # For the UI to write to ./config, the container must run as a user that can: yours (`id -u` and `id -g`).
+    user: "1000:1000"
+    volumes:
+      - ./config:/config
+      - ./work:/work:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  # A service to send requests to while you try it out: http://mock:8081/soap (the `demo` profile uses it).
+  # Delete this service when you point SoapCLI at your own endpoints.
+  mock:
+    image: python:3-alpine
+    command: ["python", "-u", "/mock/server.py"]
+    volumes:
+      - ./mock/server.py:/mock/server.py:ro
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
