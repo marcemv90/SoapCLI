@@ -163,13 +163,19 @@ function SaveDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
             {workspacesEnabled && !canShare && library?.readOnlyReason && (
               <p className="text-xs text-gray-500 dark:text-gray-400">{library.readOnlyReason}</p>
             )}
-            <Input autoFocus aria-label="Name" placeholder={suggestion || "Name of the request"} value={name}
-              onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void submit()} />
+            <div>
+              {shared && <label htmlFor="save-name" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>}
+              <Input id="save-name" autoFocus aria-label="Name" placeholder={suggestion || "Name of the request"} value={name}
+                onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void submit()} />
+            </div>
             {shared && (
               <>
-                <Input aria-label="Folder" list="library-folders" placeholder="Folder (optional), to group requests" value={folder}
-                  onChange={(e) => setFolder(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void submit()} />
-                <datalist id="library-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
+                <div>
+                  <label htmlFor="save-folder" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Folder (optional)</label>
+                  <Input id="save-folder" aria-label="Folder" list="library-folders" placeholder="To group requests in the Library" value={folder}
+                    onChange={(e) => setFolder(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void submit()} />
+                  <datalist id="library-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
+                </div>
                 {origin && (
                   <label className="flex items-start gap-3">
                     <Switch checked={asNew} onCheckedChange={setAsNew} aria-label="Save as a new request" />

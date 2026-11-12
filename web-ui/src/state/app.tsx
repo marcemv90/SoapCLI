@@ -263,6 +263,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     if (stale()) return;
     if (active !== workspaceRef.current) enterWorkspace(active);
+    else replaceHash(pageRef.current, active); // the address always says which workspace it is about (and not one that is gone)
     if (info.workspacesEnabled && !active) {
       setServer({ info, loaded: true, profiles: null, placeholders: null, library: null, workspaces });
       return;
@@ -275,7 +276,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]);
     if (stale()) return;
     setServer({ info: own ? { ...info, ...own } : info, loaded: true, profiles, placeholders, library, workspaces });
-  }, [enterWorkspace]);
+  }, [enterWorkspace, replaceHash]);
 
   const switchWorkspace = useCallback(async (name: string) => {
     enterWorkspace(name);
