@@ -34,10 +34,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "11"
@@ -55,7 +55,7 @@ jobs:
           sha256sum "SoapCLI-${TAG_NAME}.jar" > "SoapCLI-${TAG_NAME}.jar.sha256"
 
       - name: Upload SoapCLI JAR and checksum to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/SoapCLI-${{ env.TAG_NAME }}.jar
@@ -79,21 +79,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The image is published for linux/amd64 (Intel/AMD, most servers) and linux/arm64 (Apple Silicon, ARM servers).
       # The arm64 variant is assembled on this amd64 runner; only a few shell commands run under emulation, because the
       # Dockerfile builds the (platform independent) jar natively.
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -109,7 +109,7 @@ jobs:
       # No provenance attestation: it adds an "unknown/unknown" entry to the manifest list that some tools and
       # registry UIs mistake for a platform. The list then has exactly the two real platforms.
       - name: Build and push (linux/amd64, linux/arm64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
