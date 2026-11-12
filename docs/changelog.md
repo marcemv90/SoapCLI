@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 2.2.0
+
+The web UI grows: profiles and the options of the placeholders can be edited from it, attachments can be saved with a
+request by their path, and every call goes through the SoapCLI server. The command line client is unchanged.
 
 ### Changed
 
@@ -63,6 +66,15 @@
 - The web server now reads and discards what is left of a request body that is too large before answering `413`. Closing
   the connection with unread data could make the operating system reset it and destroy the answer, so the browser showed
   a network error instead of "The request is larger than 25 MB (--max-body-mb)".
+
+### Notes
+
+- Existing `serve` command lines and Docker commands keep working; every new option is optional.
+- The Docker image now sets `SOAPCLI_PLACEHOLDERS_FILE=/config/placeholders.json` and `SOAPCLI_ATTACHMENTS_DIR=/work`. To
+  attach files by path, mount them under `/work`; to edit profiles and placeholder options from the UI, mount `/config`
+  without `:ro` and set `SOAPCLI_ALLOW_CONFIG_EDIT=true` (inside a container the server listens on a network address, so
+  editing is off by default).
+- The jar and the Docker image take their version from the tag, as for the earlier releases.
 
 ## 2.1.0
 
