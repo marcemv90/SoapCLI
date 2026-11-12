@@ -18,8 +18,9 @@ image** that does both.
 - **Flexible** – SOAP 1.1 and 1.2 (auto-detected), custom headers, Basic/Bearer auth, client certificates and custom
   trust stores, HTTP/SOCKS proxies, MTOM attachments, placeholders and per-environment profiles.
 - **A web UI, embedded** – `java -jar SoapCLI.jar serve` opens a professional [TailAdmin](https://tailadmin.com)-based
-  client: XML editor, attachments you upload from the browser, variables, history and a library, light and dark themes.
-  Everything it needs is inside the JAR; calls are made from your browser, so it reaches anything your machine reaches.
+  client: XML editor, variables and attachments (detected from the request) right under the editor, server profiles you can
+  inspect, history and a library, light and dark themes. Everything it needs is inside the JAR; the calls are made by the
+  server, so they reach anything that machine reaches, with its client certificates, proxies and profiles.
 - **Docker** – one image, the UI by default and the command line client on demand, for machines that have Docker but not
   Java.
 
@@ -75,9 +76,9 @@ java -jar SoapCLI.jar --profile acceptance --request-file request.xml --dry-run
 java -jar SoapCLI.jar serve          # then open http://127.0.0.1:8080
 ```
 
-Write or paste a request, add attachments, press **Send**. By default the call is made **from your browser** (so it
-works with anything on your network), which requires the service to allow CORS; if it does not, one click sends the same
-request through the SoapCLI server instead, which also unlocks client certificates, proxies and profiles. See the
+Write or paste a request, fill in its variables, choose a file for each `cid:` it refers to, press **Send**. The call is
+made by the SoapCLI server (so no CORS to worry about), which also brings client certificates, proxies and
+[profiles](https://marcemv90.github.io/SoapCLI/cli-profiles/), whose configuration you can read in the UI. See the
 [Web UI documentation](https://marcemv90.github.io/SoapCLI/web-ui/).
 
 ### Docker

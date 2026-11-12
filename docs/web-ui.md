@@ -7,8 +7,9 @@ read the answer. It is meant to replace a heavy GUI client for everyday calls, a
 
 - Built with [TailAdmin](https://tailadmin.com) (React, Tailwind CSS); light and dark themes; works on a phone.
 - **Everything is inside the jar.** No CDN, no font download, no extra install, and it works with no internet access.
-- Calls are made **from your browser by default**, so it reaches whatever your machine can reach: `localhost`, the
-  company network, a VPN.
+- Every call is made **by the SoapCLI server** that serves the page, so it reaches whatever the machine running it can
+  reach (`localhost`, the company network, a VPN) and can use that machine's client certificates, trust stores, proxies and
+  [profiles](cli-profiles.md). Nothing depends on the service allowing cross-origin (CORS) calls.
 
 ## Starting it
 
@@ -24,93 +25,75 @@ java -jar SoapCLI.jar serve --port 9000
 java -jar SoapCLI.jar serve --help          # every option
 ```
 
-## Two ways to send a request
-
-Next to the **Send** button you choose where the call is made from:
-
-| | **This browser** (default) | **SoapCLI server** |
-|---|---|---|
-| Who makes the call | Your browser, on your machine | The SoapCLI process that served this page |
-| Reaches | Anything your machine reaches | Anything the server's machine reaches |
-| CORS | **Required** (see below) | Not involved |
-| Client certificates, trust stores, proxies | No: only what the browser itself trusts | Yes, through [profiles](cli-profiles.md) |
-| Skip TLS checks | No | Yes, unless the administrator disabled it |
-| Headers such as `Host`, `Cookie` | The browser refuses to send them | Yes |
-| Request encodings | UTF-8 and ISO-8859-1 | Any |
-| Redirects | Browser behaviour; where they go is hidden | You control them |
-| Server profiles and their secrets | No | Yes |
-| Needs a SoapCLI server | **No**: it also works from plain static files | Yes |
-
-Use **This browser** when you want to reach something that only your machine can reach, or when there is no server at
-all. Use **SoapCLI server** for client certificates, proxies, self-signed servers, or services that do not allow CORS.
-
-### CORS: why a call from the browser can fail
-
-A web page may only read an answer from another address if that service allows it with `Access-Control-Allow-*` headers.
-A SOAP call (`Content-Type: text/xml` plus a `SOAPAction` header) also makes the browser ask first, with a "preflight"
-`OPTIONS` request. **Most SOAP servers do not answer those headers**, and a page has no way around that: it is a browser
-rule, not a SoapCLI limit.
-
-When it happens you see:
-
-![The error panel explains CORS, offers to check whether the host answers, and to retry through the server](assets/img/web-ui/cors-error.png)
-
-- **Check if the host answers** tells "something answers, but the browser blocks it (CORS)" from "nothing answers there".
-- **Send through the SoapCLI server** repeats the call from the server, which is not subject to CORS (available when the
-  page was served by a SoapCLI server).
-- Or enable CORS on the service (for the origin of this page, and for the `Content-Type`, `SOAPAction` and
-  `Authorization` request headers).
-
-Other things that stop a browser: a page served over **HTTPS cannot call `http://` URLs** (mixed content; `localhost` is
-exempt), and a self-signed certificate is rejected unless you open the URL once in a tab and accept it.
-
 ## Using it
 
 **Endpoint bar.** Pick the SOAP version (auto-detect reads the namespace of your `Envelope`), type the URL, optionally the
 **SOAP action**, and press **Send** or <kbd>Ctrl</kbd>+<kbd>Enter</kbd>. SoapCLI puts the action where each version
 expects it: the `SOAPAction` header for SOAP 1.1, the `action` parameter of the `Content-Type` for 1.2
-([details](cli-soap-versions.md)). **Save** keeps the request in the Library, **New** starts a blank one, and **Copy as…**
-generates commands (see below).
+([details](cli-soap-versions.md)). On the second row: the **server profile** to use, if the server has any (*View profile*
+opens its configuration), the **layout** of the page, **New** to start a blank request, **Save** to keep it in the Library,
+and **Copy as…** to generate commands (see below).
+
+**Layout.** The request and the response can sit **side by side** (the default, on screens wide enough) or **stacked**,
+with the response under the request. Choose with the two-pane buttons next to *New*, or in *Settings*; the choice is
+remembered.
+
+![Stacked layout: the request on top, the response below](assets/img/web-ui/request-stacked-light.png)
 
 **Request tabs**
 
-- **Body**: an XML editor with highlighting, folding and line numbers. *Format* pretty-prints it, *Sample* loads an example.
-- **Headers**: add any header; disabled rows are kept but not sent. Headers a browser cannot set are flagged.
+- **Body**: an XML editor with highlighting, folding and line numbers (*Format* pretty-prints it). Under the editor, the
+  two things the body refers to are listed, so you never leave the screen:
+    - **Variables**: every `___NAME:default___` in the request gets a field, so you can change a value without editing
+      the XML ([placeholders](cli-placeholders.md)). A field left empty uses the default written in the request.
+    - **Attachments**: every `cid:NAME` written as the **text** of an element is detected automatically, and you choose
+      the file for it (button or drag and drop onto its row). A `cid:` inside an **attribute** is not an attachment and is
+      not listed. In
+      ```xml
+      <payload payloadId="cid:message" contentType="text/xml">
+         <value>cid:1234</value>
+      </payload>
+      ```
+      only `1234` appears, because `message` is the value of an attribute. By default the file is inlined as Base64 where
+      the `cid:` is written; turn on **MTOM** to send it as a binary MIME part ([details](cli-attachments.md)). A file whose
+      `cid:` you delete from the body is kept in memory (retyping the reference brings it back) but is **not sent**.
+      Files live in memory only, so they are not kept when you reload or open a saved request. The request, with its
+      attachments in Base64, must fit the server's limit, 25 MB by default (`--max-body-mb`).
+- **Headers**: add any header; disabled rows are kept but not sent.
 - **Auth**: none, Basic or Bearer. Credentials are never stored (see [Your data](#your-data)).
-- **Variables**: every `___NAME:default___` in the request is listed here with a field, so you can change a value without
-  editing the XML ([placeholders](cli-placeholders.md)).
-- **Attachments**: upload files with the button or by dragging them in, give each a CID, and refer to it in the request
-  as `cid:CID`. By default the file is inlined as Base64; turn on **MTOM** to send it as a binary MIME part
-  ([details](cli-attachments.md)). Attachments live in memory only, so they are not kept when you reload or open a saved
-  request. Through the server, the request (with its attachments in Base64) must fit the server's limit, 25 MB by default
-  (`--max-body-mb`); from the browser there is no limit besides memory.
-- **Options**: timeout, follow redirects, skip TLS checks (server transport only).
+- **Options**: timeout, follow redirects, skip TLS checks (unless the administrator disabled it).
 
 **Response panel.** The status badge (green 2xx, amber 3xx, red 4xx/5xx; a SOAP fault is normally a red 500 with the
 fault in the body), the time and the size; tabs for the formatted **Body**, the **Headers**, the **Raw** text exactly as
 decoded, and the **Request** that was built, with credentials masked, a list of warnings (a variable nothing uses, an
-attachment nothing references, a header the browser would drop) and the XML as it will be sent. In *This browser* mode
-the Request tab updates as you type, so you can check what will go out before sending; with the SoapCLI server, press
-*Show the request* and the server builds it for you.
-
-!!! note "Response headers from the browser"
-    A browser only shows the response headers the service exposes with `Access-Control-Expose-Headers` (plus a few safe
-    ones). Use the SoapCLI server transport to see them all.
+attachment nothing references) and the XML as it was sent. Press *Show the request* to have the server build it before you
+send.
 
 **Copy as…** turns what is on screen into the equivalent `java -jar SoapCLI.jar …` command, a Docker command, or a `curl`
-command (credentials become environment variables), and *Download request.xml* saves the body, so a call you tried here
-is easy to repeat in a script.
+command (credentials become environment variables; the server builds the request for it, so headers that come from a
+profile appear as `****` for you to fill in), and *Download request.xml* saves the body, so a call you tried here is easy
+to repeat in a script.
 
 **Library** keeps your *Saved* requests and the last 50 calls (*History*), searchable by name or URL, with *Export* and
-*Import* of the saved ones as a JSON file. **Settings** holds the theme and the defaults for new requests.
+*Import* of the saved ones as a JSON file. **Profiles** shows the server's profiles (below). **Settings** holds the theme,
+the layout, the defaults for new requests and the details of the server (version, allowed destinations, limits).
 
 ## Server profiles
 
-If the SoapCLI server has a [profiles file](cli-profiles.md), choose **SoapCLI server** and pick a profile: it supplies
-the endpoint, headers, authentication, certificates, proxy and so on, and anything you fill in the form overrides it.
-Secrets stay on the server: the browser only ever receives the profile with them masked, and `${VAR}` references are
-expanded by the server from its own environment. The server reads the file on every request, so edits take effect
-immediately. Profiles cannot be edited from the UI.
+If the SoapCLI server has a [profiles file](cli-profiles.md), pick a profile next to the endpoint: it supplies the
+endpoint, headers, authentication, certificates, proxy and so on, and anything you fill in the form overrides it.
+
+![The Profiles page: the configuration of a profile as the server resolves it](assets/img/web-ui/profiles-light.png)
+
+The **Profiles** page (in the menu, or *View profile* on the request page) shows each profile's configuration as the
+server resolves it: the values after `extends`, in the order of the [documentation](cli-profiles.md#fields), with the
+nested groups (`headers`, `args`, `keystore`, `proxy`...) as tables, and the same data as JSON. A profile that cannot be
+resolved (for instance, one that extends a profile that does not exist) is marked with its error. From there, *Use in the
+request* selects it, and *Load its request file* fills the editor with the profile's `requestFile`.
+
+Secrets stay on the server: the browser only ever receives the profile with them masked (`****`), and `${VAR}`
+references are shown as written and expanded by the server from its own environment. The server reads the file on every
+request, so edits take effect immediately (press *Reload* to see them). Profiles cannot be edited from the UI.
 
 ## Your data
 
@@ -152,9 +135,9 @@ machine's port (the Docker image uses it).
 
 ## Without a SoapCLI server
 
-The interface is a set of static files (`web/` inside the jar). Served from any web server, it works in *This browser*
-mode: the SoapCLI server option is disabled, and *Settings* explains how to get one. Handy on a machine where you can
-open a page but not run Java.
+The interface is a set of static files (`web/` inside the jar), but everything it does goes through the server's API: a copy
+served from anywhere else shows a notice ("No SoapCLI server behind this page") and cannot send. Start `serve` and open
+the address it prints.
 
 ## Keyboard
 
@@ -167,8 +150,9 @@ open a page but not run Java.
 
 | Symptom | Cause |
 |---|---|
-| "The browser could not reach the service" | Usually CORS: see above. Use *Check if the host answers*. |
-| The *SoapCLI server* option is greyed out | The page was not served by a SoapCLI server. |
-| Server mode: "The host … is not allowed by this server's policy" | The administrator restricted the destinations (`--allow-host`). |
-| Server mode: "larger than 25 MB" | Raise `--max-body-mb`, or send the request from the browser. |
-| A header is flagged "browsers do not let a page set …" | `Host`, `Cookie`, `User-Agent`… cannot be set from a page; use the server transport. |
+| "No SoapCLI server behind this page" | The page was not served by `serve`: open the address `serve` prints (or the container's port). |
+| "Cannot reach the SoapCLI server" | The server stopped or the connection was lost. *Check the server again* once it is back. |
+| "The host … is not allowed by this server's policy" | The administrator restricted the destinations (`--allow-host`). |
+| "larger than 25 MB" | Raise `--max-body-mb` (the request, attachments included, is limited). |
+| An attachment you expected is not listed | Its `cid:` must be the text of an element, not the value of an attribute. |
+| An attachment is listed as "no file chosen" | Choose a file for it; until then `cid:NAME` is sent as written. |

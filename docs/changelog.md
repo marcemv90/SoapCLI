@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Changed
+
+- **The web UI always sends through the SoapCLI server.** The *This browser* / *SoapCLI server* choice is gone: calling
+  from the browser added nothing that the server cannot do, it needed the service to allow CORS, and it forced the UI to
+  carry a second copy of the request builder. The server's client certificates, proxies and profiles are now always
+  available, and there is no CORS to diagnose. A page opened without a SoapCLI server (a copy of the files) now says so and
+  cannot send. The *Settings* option "Make calls from" is removed, and old saved drafts that mention it still load.
+- **Variables and attachments are on the Body screen**, under the editor, instead of in tabs of their own. Attachments are
+  detected from the request: every `cid:NAME` written as the **text** of an element is listed and you choose its file
+  (button or drag and drop). A `cid:` inside an **attribute** is not an attachment, so in
+  `<payload payloadId="cid:message"><value>cid:1234</value></payload>` only `1234` is listed. A file whose `cid:` is no
+  longer in the body is kept in memory but not sent.
+- The sidebar no longer shows the "SoapCLI server" box; the details are in *Settings* (and a notice appears on the request
+  page only if the server cannot be reached).
+- The *Sample* button of the editor is removed.
+- The server's `Content-Security-Policy` is now `connect-src 'self'`: the page only talks to its own server.
+- *Copy as → curl* is built from the request as the server builds it (so it also works with profiles); headers that come
+  from a profile are left as `****` to be filled in.
+
+### Added
+
+- **Layout of the request page**: request and response side by side (as before) or stacked, with the response under the
+  request. Choose it next to *New* or in *Settings*; it is remembered.
+- **Profiles page**: the configuration of each server profile as the server resolves it (after `extends`, secrets masked,
+  `${VAR}` shown as written), as a table and as JSON, with *Use in the request* and *Load its request file*. Also reachable
+  with *View profile* next to the profile selector.
+
 ### Fixed
 
 - The web server now reads and discards what is left of a request body that is too large before answering `413`. Closing

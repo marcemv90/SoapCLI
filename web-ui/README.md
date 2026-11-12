@@ -15,13 +15,13 @@ Licences: [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 ```bash
 npm ci               # install exactly what package-lock.json says
 npm run dev          # http://localhost:5173; /api and /healthz are proxied to http://127.0.0.1:8080
-npm test             # Vitest (the browser engine)
+npm test             # Vitest (the helpers the page computes itself, the server API client, "Copy as")
 npm run typecheck
 npm run build        # typecheck, then build into ../src/main/resources/web
 ```
 
 For `npm run dev` to have a back end, run `java -jar ../target/SoapCLI.jar serve` (or `mvn -q package -DskipTests` first).
-Without it the UI still works in *This browser* mode.
+Without it the page loads but cannot send anything: every call goes through the server.
 
 ## After changing the UI
 
@@ -33,30 +33,32 @@ rebuild or used another `npm ci`.
 
 ```text
 src/
-  main.tsx, App.tsx          entry, hash routing (#/request, #/library, #/settings)
-  pages/                     RequestPage, LibraryPage, SettingsPage
+  main.tsx, App.tsx          entry, hash routing (#/request, #/library, #/profiles, #/settings)
+  pages/                     RequestPage, LibraryPage, ProfilesPage, SettingsPage
   components/
     layout/AppShell.tsx      sidebar, header, theme toggle
-    request/                 EndpointBar, tabs (body, headers, auth, variables, attachments, options), ResponsePanel
+    request/                 EndpointBar, body (editor, variables, attachments), tabs (headers, auth, options), ResponsePanel
     common/                  CodeEditor (CodeMirror), small controls
     ui/                      TailAdmin components
   state/                     workspace (draft, response, history, saved, settings, server info), theme
-  lib/                       the engine, in TypeScript
-    xml.ts, placeholders.ts, soap.ts, charset.ts, cid.ts      ports of the Java core
-    request.ts               builds the request exactly as core/RequestBuilder does
-    transports/browser.ts    fetch, timeouts, redirects, CORS diagnosis
+  lib/                       helpers and the API client, in TypeScript
+    xml.ts, placeholders.ts, soap.ts, cid.ts      small ports of the Java core (scanner, variable listing, version badge,
+                             `cid:` references of the attachments list)
+    attachments.ts           which assigned files are sent: the ones whose `cid:` the body still refers to
     transports/server.ts     /api/send, /api/preview, /api/format, /api/info, /api/profiles
     command.ts               "Copy as" (SoapCLI, Docker, curl)
-    storage.ts, mask.ts      what is kept in localStorage (never secrets or attachment contents)
+    storage.ts               what is kept in localStorage (never secrets or attachment contents)
 test/                        Vitest suites
 public/                      favicon and theme-init.js (sets the theme before the first paint)
 ```
 
 ## Rules of the road
 
-- **Keep the browser engine and `core` in step.** `lib/request.ts` and friends port the Java behaviour (placeholders, SOAP
-  version detection, charset handling, CID replacement, MTOM bytes). If you change one, change the other and their tests.
-- **Relative URLs only** (`base: './'`, hash routing), so the UI works behind a path prefix and from static files.
+- **The server does the work; keep the small ports in step with `core`.** The page does not build requests: it sends the
+  form to the API. What it computes itself for display (`xml.ts`, `placeholders.ts`, `soap.ts`, `cid.ts`) ports Java
+  behaviour (`XmlScanner`, `Placeholders`, `SoapVersion`, `CidReplacer`). If you change one, change the other and their tests.
+- **Relative URLs only** (`base: './'`, hash routing), so the UI works behind a path prefix.
+- **The page may only call its own server** (`connect-src 'self'`): never `fetch` another host from the UI.
 - **No inline scripts, no external hosts**: the server sends `script-src 'self'`.
 - **No secrets in storage**: passwords, tokens and attachment contents stay in memory.
 - Keep `Content-Type: application/json` on every API call; the server refuses anything else (CSRF defence).
