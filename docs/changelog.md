@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 2.3.0
+
+Workspaces: the server can keep profiles, placeholder options, attachments and saved requests in folders that a team shares,
+and the command line client can use them too. Nothing changes for a server that does not use them.
 
 ### Added
 
@@ -28,7 +31,6 @@
 - The Docker image has an empty `/workspaces` folder, owned by the unprivileged user; workspaces are not turned on by
   default (`-e SOAPCLI_WORKSPACES_DIR=/workspaces -v "$PWD/workspaces:/workspaces"`). A commented option in `compose.yaml`,
   and [`examples/workspaces`](https://github.com/marcemv90/SoapCLI/tree/main/examples/workspaces), a complete setup to copy.
-
 - **[`examples/docker`](https://github.com/marcemv90/SoapCLI/tree/main/examples/docker)**, a complete Docker setup to copy and edit: a `docker-compose.yml` with the profiles,
   placeholder options, request files, attachments and certificates folder it expects, and a small mock service so that
   everything can be tried before pointing it at a real one. A job of the CI builds the image and runs the example end to
@@ -43,6 +45,7 @@
   sharing requests is what workspaces are for. Editing profiles and placeholder options, and creating and removing
   workspaces, follow the rule that was already there (on by default only when the server listens on this machine).
 - The interface's internal state module is now `state/app.tsx` (`useApp`), so that "workspace" only means the new thing.
+- The GitHub Actions of the workflows are on the versions that run on Node 24 (nothing changes for users).
 
 ## 2.2.0
 
