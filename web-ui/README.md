@@ -45,6 +45,7 @@ src/
     xml.ts, placeholders.ts, soap.ts, cid.ts      small ports of the Java core (scanner, variable listing, version badge,
                              `cid:` references of the attachments list)
     attachments.ts           which assigned files are sent: the ones whose `cid:` the body still refers to
+    load-attachments.ts      loads the files named by path, one by one, before sending (drives the progress dialog)
     transports/server.ts     /api/send, /api/preview, /api/format, /api/info, /api/profiles
     command.ts               "Copy as" (SoapCLI, Docker, curl)
     storage.ts               what is kept in localStorage (never secrets or attachment contents)

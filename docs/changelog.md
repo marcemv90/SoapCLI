@@ -23,6 +23,17 @@
 
 ### Added
 
+- **Attachments by path.** An attachment can be named by its **path on the server** instead of being a file picked in the
+  browser, and only the path is saved with the request (Library, History, the draft), so a request with attachments can be
+  saved and sent again. Each `cid:` row has a path field that checks the file as you type. When you press *Send*, a dialog
+  loads the files one by one with their progress, and the request is sent when all of them load; if one cannot be loaded
+  nothing is sent and the dialog says why (*Close*, *Try again*, or *Cancel* / <kbd>Esc</kbd> to stop). A file chosen on
+  this computer still works and is still never saved. `serve` has a new option, `--attachments-dir`
+  (`SOAPCLI_ATTACHMENTS_DIR`): the server reads only inside that folder (default: its working directory, `/work` in the
+  Docker image), so the UI cannot be used to send arbitrary files of the machine; `..`, absolute paths elsewhere and symbolic
+  links that leave the folder are refused. New API: `POST /api/attachments/check`, and `path` next to `contentBase64` in the
+  attachments of `/api/send` and `/api/preview`; `/api/info` reports `attachmentsDir`. See
+  [Attachments by path](web-ui.md#attachments-by-path).
 - **Layout of the request page**: request and response side by side (as before) or stacked, with the response under the
   request. Choose it next to *New* or in *Settings*; it is remembered.
 - **Profiles page**: the configuration of each server profile as the server resolves it (after `extends`, secrets masked,

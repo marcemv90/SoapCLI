@@ -44,6 +44,20 @@ docker run -d --name soapcli -p 8080:8080 \
 Options after the image name go to `serve`: `docker run … ghcr.io/marcemv90/soapcli serve --port 9000 --no-insecure-tls`.
 The environment variables are listed in [Web UI](web-ui.md#sharing-it-with-a-team).
 
+### Attachments by path
+
+The web UI can attach files named by path (the path is saved with the request; see
+[Attachments by path](web-ui.md#attachments-by-path)). Inside the container it reads them only from `/work` (the image
+sets `SOAPCLI_ATTACHMENTS_DIR=/work`), so mount the folder with your files there, read-only:
+
+```bash
+docker run -d -p 127.0.0.1:8080:8080 -v "$PWD/attachments:/work:ro" ghcr.io/marcemv90/soapcli
+```
+
+In the UI, a path such as `invoice.pdf` or `/work/invoices/invoice.pdf` then refers to `attachments/invoice.pdf` or
+`attachments/invoices/invoice.pdf` on the host. Nothing outside `/work` can be attached. (`compose.yaml` has the same
+mount, commented out.)
+
 ### Profiles and secrets
 
 Mount a profiles file at `/config/profiles.json` (the image sets `SOAPCLI_PROFILE_FILE` to it) and pass the secrets it
@@ -158,4 +172,4 @@ A slim Java 21 runtime (the jar itself targets Java 11) for `amd64` and `arm64`,
 unprivileged user. The
 web UI is built into the jar, so the image has no web server or Node. `ENTRYPOINT` is `java -jar /app/SoapCLI.jar` and
 `CMD` is `serve`, which is why arguments to `docker run` select the command line client. Volumes: `/config` (profiles) and
-`/work` (the command line client's files).
+`/work` (the command line client's files, and the only place the web UI attaches files from by path).

@@ -96,6 +96,7 @@ dependency). It serves two things:
 | `GET /api/profiles` | profiles with secrets masked (`Profiles.describe`) |
 | `POST /api/send` | build and send a request (`ApiModel.SendRequest` → `SendResponse`) |
 | `POST /api/preview` | the request that would be sent, with credentials masked |
+| `POST /api/attachments/check` | open an attachment path, confined to the attachments folder, and report its name and size |
 | `POST /api/format` | pretty-print XML (same code as the CLI) |
 
 ### One engine
@@ -120,6 +121,12 @@ A server that sends HTTP requests for whoever can reach it is an SSRF machine, s
   (`--max-body-mb`, `--max-response-mb`) and timeouts are capped; `--no-insecure-tls` removes the "skip checks" switch.
 - Secrets never go to the browser: profiles are described masked, and a request refers to a profile by name. Attachments
   arrive as Base64, are written to a private temporary directory with server-chosen names and deleted afterwards.
+- An attachment can also be named by **path**, and then the server reads that file: `ApiService.resolveAttachment`
+  confines it to `--attachments-dir` (default: the working directory, `/work` in Docker). The path is made absolute and
+  normalised and compared with the folder *before* the disk is touched (so a path outside it reveals nothing about what
+  exists there), then resolved with `toRealPath` and compared again (so a symbolic link cannot leave the folder), and it
+  must be a readable regular file. The files attached this way count against `--max-body-mb` together, and the endpoint
+  that checks a path is a JSON `POST` like the rest. Profile `attachments` are the administrator's and are not confined.
 - `Content-Security-Policy: default-src 'none'; script-src 'self'; ... connect-src 'self'` (the page only talks to its own
   server, which is the one that calls the services), plus `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`
   and `Cross-Origin-Resource-Policy: same-origin`.
