@@ -24,6 +24,8 @@ io.github.marcemv90.soapcli
     ├── ServeCommand, ServeOptions                             `serve` / `healthcheck`: options, env defaults, banner
     ├── WebServer                                              JDK com.sun.net.httpserver: routing, security headers,
     │                                                          login, static files from the classpath (/web)
+    ├── Workspaces, Workspace                                  the folders under --workspaces-dir, and what one holds
+    ├── Library                                                the saved requests of a workspace: one JSON file each
     ├── ConfigFile                                             a file the UI may edit: revision, writability, safe write
     ├── PlaceholderOptions                                     the dropdown options of the placeholders (own file)
     └── ApiService, ApiModel                                   the JSON API over the engine, and its DTOs
@@ -138,6 +140,14 @@ A server that sends HTTP requests for whoever can reach it is an SSRF machine, s
   Secrets are never sent to the browser: a profile is described masked (`Profiles.own`), and a secret that comes back as
   `****` is replaced by the saved value (`Profiles.restoreSecrets`). A new or changed profile is validated like one that
   is used (`Profiles.validate`), as are the profiles that extend it. All of these are JSON `POST`s, like the rest.
+- **Workspaces.** The API of a workspace is under `/api/workspaces/{name}/`; the name is matched against the folder listing
+  and a regular expression before it reaches the disk, and so is the id of a saved request (`Workspace.NAME`, `Library.ID`).
+  The attachments folder of a request is that of the workspace it is sent from, so one workspace cannot attach another's
+  files. A workspace can only narrow the server's destinations (`HostPolicy.and`) and a `workspace.json` that cannot be read
+  makes it read-only and stops it sending. Saved requests are written with the same revision-checked, atomic `ConfigFile`
+  as the profiles, but without the credentials a draft might carry (`Library.sanitize`); they are shared on purpose, so they
+  are not gated by `--allow-config-edit`, only by `--no-config-edit`, the folder's permissions and `readOnly`. Removing a
+  workspace renames its folder (`.removed-...`) and never deletes anything.
 - An attachment can also be named by **path**, and then the server reads that file: `ApiService.resolveAttachment`
   confines it to `--attachments-dir` (default: the working directory, `/work` in Docker). The path is made absolute and
   normalised and compared with the folder *before* the disk is touched (so a path outside it reveals nothing about what

@@ -8,6 +8,7 @@ nav:
   - Home: index.md
   - Installation: installation-from-source.md
   - Web UI: web-ui.md
+  - Workspaces: workspaces.md
   - Docker: docker.md
   - FAQ: faq.md
   - Changelog: changelog.md

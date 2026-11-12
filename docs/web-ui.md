@@ -81,7 +81,8 @@ profile appear as `****` for you to fill in), and *Download request.xml* saves t
 to repeat in a script.
 
 **Library** keeps your *Saved* requests and the last 50 calls (*History*), searchable by name or URL, with *Export* and
-*Import* of the saved ones as a JSON file. **Profiles** and **Placeholders** show, and can edit, the server's profiles and the options of the placeholders (below). **Settings** holds the theme,
+*Import* of the saved ones as a JSON file. On a server that uses [workspaces](workspaces.md) the saved requests are the
+workspace's, kept on the server and shared with everyone who opens it. **Profiles** and **Placeholders** show, and can edit, the server's profiles and the options of the placeholders (below). **Settings** holds the theme,
 the layout, the defaults for new requests and the details of the server (version, allowed destinations, limits).
 
 ## Server profiles
@@ -201,10 +202,20 @@ without a folder chosen for this. To switch the feature off, point it at an empt
 them in memory to build the request. The `attachments` of a [profile](cli-profiles.md) are not affected: the administrator
 wrote them, so they are not confined to this folder.
 
+## Workspaces
+
+A server started with `--workspaces-dir` keeps **one folder per team or project**, each with its own profiles, placeholder
+options, attachments and saved requests, so that what one person saves is there for the next one. A switcher in the sidebar
+chooses the workspace, the **Workspaces** page creates, opens and removes them, and every address names its workspace, so a link
+to a saved request opens it for whoever follows it. See [Workspaces](workspaces.md) for the layout of the folders, the
+settings an administrator has (`readOnly`, `allowedHosts`, `secrets.env`), who can do what, and how to use one from the
+command line and from Docker.
+
 ## Your data
 
 Saved requests, the history, the draft you are working on and your settings live in **your browser's local storage**,
-never on the server. **Passwords, tokens and the contents of files are never stored**: they are forgotten when you close
+never on the server. (With [workspaces](workspaces.md), the requests you save in a workspace are the exception: they are
+files on the server, shared on purpose; the history and the draft are still the browser's, kept per workspace.) **Passwords, tokens and the contents of files are never stored**: they are forgotten when you close
 the tab. The *path* of an attachment is stored with its request: that is what lets you save a request with its
 attachments. *Settings → Your data* can clear the history or delete everything.
 
@@ -219,6 +230,9 @@ like any internal tool that can call other systems:
   an allowed host cannot bounce a request to a forbidden one.
 - **Think before turning on editing** on a network address (`--allow-config-edit`): whoever can open the UI can then
   change a profile's endpoint and so receive its credentials ([details](#editing-profiles)). Only with a login.
+- **Keep a team's files together** with [workspaces](workspaces.md): each has its own profiles, secrets and attachments folder,
+  and can be limited to some destinations (`allowedHosts`) or made read-only. Everyone who can sign in sees every workspace,
+  and what is saved in one is readable by all of them.
 - **Choose the attachments folder** with `--attachments-dir`: people using the UI can attach, and so send to the
   destinations they may call, any file inside it ([details](#attachments-by-path)).
 - **Remove the dangerous switch** if you want: `--no-insecure-tls` hides "Skip TLS certificate checks".
@@ -239,6 +253,7 @@ Content-Security-Policy: scripts may only come from the server itself.
 | `--allow-host` (repeatable) | `SOAPCLI_ALLOWED_HOSTS` (comma separated) | any host |
 | `--no-insecure-tls` | `SOAPCLI_NO_INSECURE_TLS=true` | allowed |
 | `--placeholders-file` | `SOAPCLI_PLACEHOLDERS_FILE` | `~/.config/soap-cli-placeholders.json` |
+| `--workspaces-dir` | `SOAPCLI_WORKSPACES_DIR` | no workspaces. Replaces the three file options above ([details](workspaces.md)) |
 | `--allow-config-edit` / `--no-config-edit` | `SOAPCLI_ALLOW_CONFIG_EDIT=true` / `false` | on only if listening on this machine |
 | `--attachments-dir` | `SOAPCLI_ATTACHMENTS_DIR` | the working directory (`/work` in Docker) |
 | `--max-body-mb` | `SOAPCLI_MAX_BODY_MB` | 25 |
@@ -271,6 +286,9 @@ the address it prints.
 | No *Edit* / *New profile* buttons | Editing is off (the page says why): a network address needs `--allow-config-edit`, and the file must be writable (Docker: no `:ro`). |
 | "The profiles file changed since you opened it" | Someone (or you, by hand) changed it. *Reload the file* shows the current content; make the change again. |
 | "This change would break the profile …" | A profile that extends this one would stop working. Fix that one first, or change both. |
+| "There is no workspace '…'" | A link or a remembered choice names a workspace that was removed or renamed: pick another in the sidebar. |
+| "This workspace is read-only" / the *Workspace* choice of *Save* is greyed out | The administrator set `"readOnly": true` in its `workspace.json`, or the folder is not writable (Docker: mount it without `:ro`), or the server runs with `--no-config-edit`. |
+| "The saved request changed since you opened it" | Someone saved it meanwhile. Open it again, or use *Save as a new request*. |
 | "… is outside the folder this server allows for attachments" | The path leaves the attachments folder (`--attachments-dir`; `/work` in Docker). Put the file inside it. |
 | "The attachment file '…' was not found" | The path is read on the **server's** machine, not yours. With Docker, mount the files, e.g. `-v "$PWD/attachments:/work:ro"`. |
 | An attachment you expected is not listed | Its `cid:` must be the text of an element, not the value of an attribute. |

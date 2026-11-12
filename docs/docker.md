@@ -92,6 +92,20 @@ docker run -d -p 127.0.0.1:8080:8080 -v "$PWD/config:/config" -e SOAPCLI_ALLOW_C
 
 The container user must be able to write to that folder (`chown 10001 config`, or `--user "$(id -u):$(id -g)"`).
 
+### Workspaces
+
+For a team, keep the files in [workspaces](workspaces.md): one folder each, with its own profiles, placeholder options,
+attachments and saved requests, shared by whoever opens the UI. The image has an empty `/workspaces` for them and does not turn
+them on by itself:
+
+```bash
+docker run -d -p 127.0.0.1:8080:8080 -e SOAPCLI_WORKSPACES_DIR=/workspaces -v "$PWD/workspaces:/workspaces" \
+  -e SOAPCLI_UI_USER=alice -e SOAPCLI_UI_PASSWORD='choose-a-strong-one' ghcr.io/marcemv90/soapcli
+```
+
+Mount it without `:ro` so that the UI can save requests and create workspaces, and let the container's user write to it
+(`chown 10001 workspaces`, or `--user "$(id -u):$(id -g)"`). With workspaces on, `/config` and `/work` are not used by the UI.
+
 ### Docker Compose
 
 The repository has a ready `compose.yaml`:
@@ -201,5 +215,6 @@ You can also say `cli` explicitly (`docker run --rm IMAGE cli --version`).
 A slim Java 21 runtime (the jar itself targets Java 11) for `amd64` and `arm64`, the jar, and nothing else; it runs as an
 unprivileged user. The
 web UI is built into the jar, so the image has no web server or Node. `ENTRYPOINT` is `java -jar /app/SoapCLI.jar` and
-`CMD` is `serve`, which is why arguments to `docker run` select the command line client. Volumes: `/config` (profiles and placeholder options) and
-`/work` (the command line client's files, and the only place the web UI attaches files from by path).
+`CMD` is `serve`, which is why arguments to `docker run` select the command line client. Volumes: `/config` (profiles and placeholder options),
+`/work` (the command line client's files, and the only place the web UI attaches files from by path) and `/workspaces`
+(the [workspaces](workspaces.md), when `SOAPCLI_WORKSPACES_DIR` points there).
