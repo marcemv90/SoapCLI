@@ -12,7 +12,7 @@ name: soapcli-example
 
 services:
   soapcli:
-    image: ghcr.io/marcemv90/soapcli:latest     # or pin a release, e.g. :2.2.0
+    image: ghcr.io/marcemv90/soapcli:latest     # or pin a release, e.g. :2.3.0
     ports:
       - "127.0.0.1:8080:8080"                   # this machine only; "8080:8080" publishes it on the network (set a login first!)
     env_file:

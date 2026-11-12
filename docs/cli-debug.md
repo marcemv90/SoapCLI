@@ -29,7 +29,7 @@ HTTP headers:
 Content-Type: text/xml; charset=utf-8
 Accept: text/xml, application/soap+xml, */*;q=0.9
 SOAPAction: ""
-User-Agent: SoapCLI/2.2.0
+User-Agent: SoapCLI/2.3.0
 Authorization: Basic ****
 Content-Length: 140
 

@@ -72,7 +72,7 @@ working directory, so `requests/demo-order.xml` in a profile means `./work/reque
   attachments from), by its path.
 - **The mock service.** It is only there so that the demo works. Delete the `mock` service of `docker-compose.yml` and the
   `demo` profiles when you point SoapCLI at your own services.
-- **A version.** The compose file uses the `latest` image; write `ghcr.io/marcemv90/soapcli:2.2.0` (or another release) to pin it.
+- **A version.** The compose file uses the `latest` image; write `ghcr.io/marcemv90/soapcli:2.3.0` (or another release) to pin it.
 - **Editing from the UI.** `SOAPCLI_ALLOW_CONFIG_EDIT` in `docker-compose.yml` lets the UI change `config/`. If it should only
   read it, delete that line and add `:ro` to the `./config:/config` volume.
 
