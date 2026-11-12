@@ -18,8 +18,10 @@ import io.github.marcemv90.soapcli.core.XmlCharsets;
 import io.github.marcemv90.soapcli.core.XmlFormat;
 import io.github.marcemv90.soapcli.web.ApiModel.AttachmentCheckResponse;
 import io.github.marcemv90.soapcli.web.ApiModel.AttachmentUpload;
+import io.github.marcemv90.soapcli.web.ApiModel.CreateWorkspaceRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.DeleteRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.InfoResponse;
+import io.github.marcemv90.soapcli.web.ApiModel.LibraryResponse;
 import io.github.marcemv90.soapcli.web.ApiModel.NameValue;
 import io.github.marcemv90.soapcli.web.ApiModel.PlaceholderInfo;
 import io.github.marcemv90.soapcli.web.ApiModel.PlaceholdersResponse;
@@ -29,10 +31,18 @@ import io.github.marcemv90.soapcli.web.ApiModel.ProfilesResponse;
 import io.github.marcemv90.soapcli.web.ApiModel.SaveProfileRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.SavePlaceholderRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.SaveResponse;
+import io.github.marcemv90.soapcli.web.ApiModel.SaveSavedRequest;
+import io.github.marcemv90.soapcli.web.ApiModel.SaveSavedResponse;
+import io.github.marcemv90.soapcli.web.ApiModel.SavedRequestDetail;
+import io.github.marcemv90.soapcli.web.ApiModel.SavedRequestRef;
+import io.github.marcemv90.soapcli.web.ApiModel.RemoveWorkspaceRequest;
+import io.github.marcemv90.soapcli.web.ApiModel.RemoveWorkspaceResponse;
 import io.github.marcemv90.soapcli.web.ApiModel.RequestInfo;
 import io.github.marcemv90.soapcli.web.ApiModel.SendError;
 import io.github.marcemv90.soapcli.web.ApiModel.SendRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.SendResponse;
+import io.github.marcemv90.soapcli.web.ApiModel.WorkspaceSummary;
+import io.github.marcemv90.soapcli.web.ApiModel.WorkspacesResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
@@ -67,21 +77,26 @@ final class ApiService {
     private final ServeOptions options;
     private final HostPolicy hostPolicy;
     private final SoapClient client = new SoapClient();
-    private final ConfigFile profilesFile;
-    private final ConfigFile placeholdersFile;
+    private final Workspaces workspaces;
 
     ApiService(ServeOptions options) {
         this.options = options;
-        String editOff = options.configEditOffReason();
-        this.profilesFile = new ConfigFile(options.profileFile, "profiles file", editOff);
-        this.placeholdersFile = new ConfigFile(options.placeholdersFile, "placeholders file", editOff);
+        this.workspaces = new Workspaces(options);
         HostPolicy policy = new HostPolicy(options.allowedHosts);
         this.hostPolicy = policy.isOpen() ? null : policy;
     }
 
-    // ---- info and profiles ----------------------------------------------------------------------------------------
+    Workspaces workspaces() {
+        return workspaces;
+    }
 
-    InfoResponse info() {
+    // ---- info, workspaces and profiles ------------------------------------------------------------------------------
+
+    /**
+     * What the server is, and, for a workspace (or for the single set of files of a server without workspaces), where its
+     * files are. Without a workspace only what holds for the whole server is said.
+     */
+    InfoResponse info(Workspace ws) {
         InfoResponse info = new InfoResponse();
         info.version = Version.get();
         info.insecureTlsAllowed = !options.noInsecureTls;
@@ -89,24 +104,79 @@ final class ApiService {
             info.allowedHosts = hostPolicy.patterns();
         }
         info.maxBodyBytes = options.maxBodyBytes;
-        info.profilesFile = options.profileFile.toString();
-        info.profilesFileFound = Files.isRegularFile(options.profileFile);
-        info.attachmentsDir = options.attachmentsDir.toString();
-        info.placeholdersFile = options.placeholdersFile.toString();
         info.configEditAllowed = options.configEditAllowed();
+        info.workspacesEnabled = workspaces.enabled();
+        if (workspaces.enabled()) {
+            info.workspacesDir = workspaces.dir().toString();
+        }
+        if (ws != null) {
+            info.profilesFile = ws.profiles.path().toString();
+            info.profilesFileFound = ws.profiles.exists();
+            info.attachmentsDir = ws.attachmentsDir().toString();
+            info.placeholdersFile = ws.placeholders.path().toString();
+            if (!ws.isSingle()) {
+                info.workspace = ws.summary();
+            }
+        }
         return info;
     }
 
-    ProfilesResponse profiles() {
+    WorkspacesResponse listWorkspaces() {
+        return workspaces.list();
+    }
+
+    WorkspaceSummary createWorkspace(CreateWorkspaceRequest request) {
+        if (request == null) {
+            throw new SendError(400, "config", "Give the workspace a name");
+        }
+        return workspaces.create(request.name, request.description).summary();
+    }
+
+    RemoveWorkspaceResponse removeWorkspace(RemoveWorkspaceRequest request) {
+        if (request == null || !notBlank(request.name)) {
+            throw new SendError(400, "config", "Say which workspace to remove");
+        }
+        RemoveWorkspaceResponse response = new RemoveWorkspaceResponse();
+        response.movedTo = workspaces.remove(request.name);
+        return response;
+    }
+
+    // ---- the library of saved requests --------------------------------------------------------------------------------
+
+    private static Library library(Workspace ws) {
+        if (ws.library == null) {
+            throw new SendError(404, "config", "This server does not use workspaces, so saved requests are kept in the browser");
+        }
+        return ws.library;
+    }
+
+    LibraryResponse library(Workspace ws, boolean list) {
+        return library(ws).list();
+    }
+
+    SavedRequestDetail savedRequest(Workspace ws, String id) {
+        return library(ws).get(id);
+    }
+
+    SaveSavedResponse saveRequest(Workspace ws, SaveSavedRequest request) {
+        return library(ws).save(request);
+    }
+
+    void deleteRequest(Workspace ws, SavedRequestRef ref) {
+        library(ws).delete(ref);
+    }
+
+    ProfilesResponse profiles(Workspace ws) {
+        ConfigFile profilesFile = ws.profiles;
         ConfigFile.Snapshot snapshot = profilesFile.snapshot();
         ProfilesResponse response = new ProfilesResponse();
-        response.file = options.profileFile.toString();
+        response.file = profilesFile.path().toString();
         response.found = profilesFile.exists();
         response.revision = snapshot.revision;
         response.readOnlyReason = profilesFile.readOnlyReason();
         if (response.found) {
             try {
-                listProfiles(Profiles.parse(snapshot.text, options.profileFile), response);
+                listProfiles(Profiles.parse(snapshot.text, profilesFile.path()), response);
             } catch (ConfigException e) {
                 response.error = e.getMessage();
                 if (response.readOnlyReason == null) {
@@ -135,12 +205,12 @@ final class ApiService {
     // ---- editing profiles -----------------------------------------------------------------------------------------
 
     /** A profile as it is in the file, to fill the edit form. */
-    ProfileDefinition profileDefinition(String name) {
-        ConfigFile.Snapshot snapshot = profilesFile.snapshot();
-        if (!profilesFile.exists()) {
-            throw new SendError(404, "config", "There is no profiles file on this server (" + options.profileFile + ")");
+    ProfileDefinition profileDefinition(Workspace ws, String name) {
+        ConfigFile.Snapshot snapshot = ws.profiles.snapshot();
+        if (!ws.profiles.exists()) {
+            throw new SendError(404, "config", "There is no profiles file on this server (" + ws.profiles.path() + ")");
         }
-        Profiles profiles = Profiles.parse(snapshot.text, options.profileFile);
+        Profiles profiles = Profiles.parse(snapshot.text, ws.profiles.path());
         if (!profiles.has(name)) {
             throw new SendError(404, "config", "There is no profile '" + name + "'");
         }
@@ -156,7 +226,7 @@ final class ApiService {
      * Creates a profile or replaces its definition. The rest of the file (other profiles, comments) is left as it was.
      * The result has to be a file in which this profile, and every profile that inherits from it, can still be used.
      */
-    SaveResponse saveProfile(SaveProfileRequest request) {
+    SaveResponse saveProfile(Workspace ws, SaveProfileRequest request) {
         if (request == null || !notBlank(request.name)) {
             throw new SendError(400, "config", "The profile needs a name");
         }
@@ -168,7 +238,9 @@ final class ApiService {
             throw new SendError(400, "config", "A profile name is made of letters, digits, '.', '_' and '-' (at most 64)");
         }
         SaveResponse response = new SaveResponse();
-        response.revision = profilesFile.edit(request.revision, text -> {
+        Map<String, String> env = ws.env();
+        Path file = ws.profiles.path();
+        response.revision = ws.profiles.edit(request.revision, text -> {
             boolean exists = JsonSplice.has(text, "profiles", name);
             if (request.create && exists) {
                 throw new SendError(409, "conflict", "A profile called '" + name + "' already exists");
@@ -176,20 +248,20 @@ final class ApiService {
             if (!request.create && !exists) {
                 throw new SendError(404, "config", "There is no profile '" + name + "' any more");
             }
-            ObjectNode before = exists ? Profiles.parse(text, options.profileFile).ownUnmasked(name) : null;
+            ObjectNode before = exists ? Profiles.parse(text, file).ownUnmasked(name) : null;
             ObjectNode definition = Profiles.restoreSecrets((ObjectNode) request.definition, before);
             String changed = JsonSplice.put(text, "profiles", name, definition);
 
-            Profiles after = Profiles.parse(changed, options.profileFile);
-            response.warnings.addAll(after.validate(name, options.env));
+            Profiles after = Profiles.parse(changed, file);
+            response.warnings.addAll(after.validate(name, env));
             // Profiles that inherit from this one must keep working. One that was already broken is not this change's doing.
-            Profiles earlier = text.trim().isEmpty() ? null : Profiles.parse(text, options.profileFile);
+            Profiles earlier = text.trim().isEmpty() ? null : Profiles.parse(text, file);
             for (String dependent : after.dependents(name)) {
-                if (earlier == null || !usable(earlier, dependent)) {
+                if (earlier == null || !usable(earlier, dependent, env)) {
                     continue;
                 }
                 try {
-                    after.validate(dependent, options.env);
+                    after.validate(dependent, env);
                 } catch (ConfigException e) {
                     throw new ConfigException("This change would break the profile '" + dependent + "', which extends '" + name
                             + "': " + e.getMessage());
@@ -200,26 +272,26 @@ final class ApiService {
         return response;
     }
 
-    private boolean usable(Profiles profiles, String name) {
+    private boolean usable(Profiles profiles, String name, Map<String, String> env) {
         try {
-            profiles.validate(name, options.env);
+            profiles.validate(name, env);
             return true;
         } catch (ConfigException e) {
             return false;
         }
     }
 
-    SaveResponse deleteProfile(DeleteRequest request) {
+    SaveResponse deleteProfile(Workspace ws, DeleteRequest request) {
         if (request == null || !notBlank(request.name)) {
             throw new SendError(400, "config", "Say which profile to remove");
         }
         String name = request.name;
         SaveResponse response = new SaveResponse();
-        response.revision = profilesFile.edit(request.revision, text -> {
+        response.revision = ws.profiles.edit(request.revision, text -> {
             if (!JsonSplice.has(text, "profiles", name)) {
                 throw new SendError(404, "config", "There is no profile '" + name + "' any more");
             }
-            List<String> dependents = Profiles.parse(text, options.profileFile).dependents(name);
+            List<String> dependents = Profiles.parse(text, ws.profiles.path()).dependents(name);
             if (!dependents.isEmpty()) {
                 throw new SendError(409, "conflict", "The profile '" + name + "' cannot be removed while others extend it: "
                         + String.join(", ", dependents));
@@ -231,10 +303,11 @@ final class ApiService {
 
     // ---- placeholder options --------------------------------------------------------------------------------------
 
-    PlaceholdersResponse placeholders() {
+    PlaceholdersResponse placeholders(Workspace ws) {
+        ConfigFile placeholdersFile = ws.placeholders;
         ConfigFile.Snapshot snapshot = placeholdersFile.snapshot();
         PlaceholdersResponse response = new PlaceholdersResponse();
-        response.file = options.placeholdersFile.toString();
+        response.file = placeholdersFile.path().toString();
         response.found = placeholdersFile.exists();
         response.revision = snapshot.revision;
         response.readOnlyReason = placeholdersFile.readOnlyReason();
@@ -253,13 +326,13 @@ final class ApiService {
     }
 
     /** Creates a placeholder's options, or replaces them. */
-    SaveResponse savePlaceholder(SavePlaceholderRequest request) {
+    SaveResponse savePlaceholder(Workspace ws, SavePlaceholderRequest request) {
         if (request == null || !notBlank(request.name) || !PlaceholderOptions.NAME.matcher(request.name).matches()) {
             throw new SendError(400, "config", "A placeholder name is made of letters, digits, '_', '.' and '-' and does not start with a digit");
         }
         String name = request.name;
         SaveResponse response = new SaveResponse();
-        response.revision = placeholdersFile.edit(request.revision, text -> {
+        response.revision = ws.placeholders.edit(request.revision, text -> {
             boolean exists = JsonSplice.has(text, PlaceholderOptions.CONTAINER, name);
             if (request.create && exists) {
                 throw new SendError(409, "conflict", "'" + name + "' already has options");
@@ -273,12 +346,12 @@ final class ApiService {
         return response;
     }
 
-    SaveResponse deletePlaceholder(DeleteRequest request) {
+    SaveResponse deletePlaceholder(Workspace ws, DeleteRequest request) {
         if (request == null || !notBlank(request.name)) {
             throw new SendError(400, "config", "Say which placeholder to remove");
         }
         SaveResponse response = new SaveResponse();
-        response.revision = placeholdersFile.edit(request.revision, text -> {
+        response.revision = ws.placeholders.edit(request.revision, text -> {
             if (!JsonSplice.has(text, PlaceholderOptions.CONTAINER, request.name)) {
                 throw new SendError(404, "config", "'" + request.name + "' has no options any more");
             }
@@ -288,22 +361,23 @@ final class ApiService {
     }
 
     /** The default request XML of a profile ({@code requestFile}), to prefill the editor. */
-    String profileRequest(String name) {
-        Profile profile = resolveProfile(name);
+    String profileRequest(Workspace ws, String name) {
+        Profile profile = resolveProfile(ws, name);
         CallConfig scratch = new CallConfig();
-        profile.applyTo(scratch, options.userHome);
+        profile.applyTo(scratch, options.userHome, ws.baseDir());
         if (scratch.requestFile == null) {
             throw new SendError(404, "config", "The profile '" + name + "' has no requestFile");
         }
         return readRequestFile(scratch.requestFile);
     }
 
-    private Profile resolveProfile(String name) {
-        if (!Files.isRegularFile(options.profileFile)) {
-            throw new SendError(404, "config", "There is no profiles file on this server (" + options.profileFile + ")");
+    private Profile resolveProfile(Workspace ws, String name) {
+        Path file = ws.profiles.path();
+        if (!Files.isRegularFile(file)) {
+            throw new SendError(404, "config", "There is no profiles file on this server (" + file + ")");
         }
         try {
-            return Profiles.load(options.profileFile).resolve(name, options.env);
+            return Profiles.load(file).resolve(name, ws.env());
         } catch (ConfigException e) {
             throw new SendError(400, "config", e.getMessage());
         }
@@ -328,8 +402,8 @@ final class ApiService {
      * file, and not exceed the size limit. The UI calls this for each file before sending, so it can show them loading
      * and refuse a bad path before anything is sent.
      */
-    AttachmentCheckResponse checkAttachment(String path) {
-        Path file = resolveAttachment(path);
+    AttachmentCheckResponse checkAttachment(Workspace ws, String path) {
+        Path file = resolveAttachment(ws, path);
         long size = sizeOf(file);
         if (size > options.maxBodyBytes) {
             throw tooLargeAttachment(path, size);
@@ -348,16 +422,18 @@ final class ApiService {
      * folder is ever read: this is what keeps "attach by path" from being "read any file of this machine and send it
      * to any endpoint".
      */
-    private Path resolveAttachment(String given) {
+    private Path resolveAttachment(Workspace ws, String given) {
         if (!notBlank(given)) {
             throw new SendError(400, "config", "The attachment path is empty");
         }
-        Path configured = options.attachmentsDir.toAbsolutePath().normalize();
+        Path configured = ws.attachmentsDir().toAbsolutePath().normalize();
         Path root;
         try {
             root = configured.toRealPath();
         } catch (IOException e) {
-            throw new SendError(500, "config", "The attachments folder '" + configured + "' is not available on this server");
+            throw new SendError(ws.isSingle() ? 500 : 404, "config", ws.isSingle()
+                    ? "The attachments folder '" + configured + "' is not available on this server"
+                    : "This workspace has no attachments folder yet: create '" + configured + "' and put the files there");
         }
         String text = given.trim();
         if ((text.equals("~") || text.startsWith("~/")) && notBlank(options.userHome)) {
@@ -372,7 +448,7 @@ final class ApiService {
         }
         // Looked at before touching the disk, so a path outside the folder cannot be used to find out what exists there.
         if (!wanted.startsWith(configured) && !wanted.startsWith(root)) {
-            throw outsideFolder(given, configured);
+            throw outsideFolder(ws, given, configured);
         }
         Path real;
         try {
@@ -381,7 +457,7 @@ final class ApiService {
             throw new SendError(404, "config", "The attachment file '" + given + "' was not found in " + configured);
         }
         if (!real.startsWith(root)) {
-            throw outsideFolder(given, configured); // a symbolic link that leaves the folder
+            throw outsideFolder(ws, given, configured); // a symbolic link that leaves the folder
         }
         if (!Files.isRegularFile(real) || !Files.isReadable(real)) {
             throw new SendError(400, "config", "'" + given + "' is not a readable file");
@@ -389,9 +465,10 @@ final class ApiService {
         return real;
     }
 
-    private static SendError outsideFolder(String given, Path folder) {
+    private static SendError outsideFolder(Workspace ws, String given, Path folder) {
         return new SendError(403, "forbidden", "'" + given + "' is outside the folder this server allows for attachments ("
-                + folder + "). Put the file there, or ask the administrator to change --attachments-dir");
+                + folder + "). Put the file there, or ask the administrator "
+                + (ws.isSingle() ? "to change --attachments-dir" : "for it to be put in the attachments folder of this workspace"));
     }
 
     private static long sizeOf(Path file) {
@@ -419,14 +496,14 @@ final class ApiService {
 
     // ---- preview and send -----------------------------------------------------------------------------------------
 
-    RequestInfo preview(SendRequest request) {
-        try (Job job = prepare(request)) {
+    RequestInfo preview(Workspace ws, SendRequest request) {
+        try (Job job = prepare(ws, request)) {
             return describe(job);
         }
     }
 
-    SendResponse send(SendRequest request) {
-        try (Job job = prepare(request)) {
+    SendResponse send(Workspace ws, SendRequest request) {
+        try (Job job = prepare(ws, request)) {
             SoapResponse response = client.send(job.prepared, job.cfg.transport);
             return toResponse(response, job);
         }
@@ -506,9 +583,14 @@ final class ApiService {
         }
     }
 
-    private Job prepare(SendRequest req) {
+    private Job prepare(Workspace ws, SendRequest req) {
         if (req == null) {
             throw new SendError(400, "config", "The request is empty");
+        }
+        Workspace.Meta meta = ws.meta();
+        if (meta.error != null) {
+            // The workspace may limit where it can call; a limit that cannot be read is not silently dropped.
+            throw new SendError(400, "config", meta.error + " Nothing is sent from it until it is fixed.");
         }
         Job job = new Job();
         try {
@@ -516,9 +598,9 @@ final class ApiService {
             job.cfg = cfg;
 
             if (notBlank(req.profile)) {
-                Profile profile = resolveProfile(req.profile);
+                Profile profile = resolveProfile(ws, req.profile);
                 job.warnings.addAll(profile.warnings);
-                profile.applyTo(cfg, options.userHome);
+                profile.applyTo(cfg, options.userHome, ws.baseDir());
             }
             String profileRequestFile = cfg.requestFile;
             cfg.requestFile = null; // the browser supplies the body; the file is only a fallback
@@ -526,7 +608,7 @@ final class ApiService {
             applyOverrides(req, cfg);
 
             // The server's rules come last so that they cannot be overridden from the browser.
-            cfg.transport.hostPolicy = hostPolicy;
+            cfg.transport.hostPolicy = ws.hostPolicy(hostPolicy);
             cfg.transport.maxResponseBytes = options.maxResponseBytes;
             cfg.transport.connectTimeoutSeconds = Math.min(cfg.transport.connectTimeoutSeconds, MAX_CONNECT_SECONDS);
             if (cfg.transport.readTimeoutSeconds <= 0 || cfg.transport.readTimeoutSeconds > MAX_READ_SECONDS) {
@@ -544,7 +626,7 @@ final class ApiService {
                 throw new SendError(400, "config", "The request body is empty");
             }
 
-            addAttachments(req.attachments, cfg, job);
+            addAttachments(ws, req.attachments, cfg, job);
 
             Charset charset = XmlCharsets.declared(body);
             job.prepared = RequestBuilder.build(cfg, body, charset, Version.userAgent());
@@ -612,7 +694,7 @@ final class ApiService {
      * names chosen here, never by the browser; a file named by path is read where it is, once it has been confined to
      * the attachments folder. Either way, an attachment is a {@code cid} plus exactly one of the two.
      */
-    private void addAttachments(List<AttachmentUpload> uploads, CallConfig cfg, Job job) {
+    private void addAttachments(Workspace ws, List<AttachmentUpload> uploads, CallConfig cfg, Job job) {
         if (uploads == null || uploads.isEmpty()) {
             return;
         }
@@ -629,7 +711,7 @@ final class ApiService {
                     throw new SendError(400, "config", "The attachment '" + cid + "' has both a path and content: give one of them");
                 }
                 if (notBlank(upload.path)) {
-                    Path file = resolveAttachment(upload.path);
+                    Path file = resolveAttachment(ws, upload.path);
                     long size = sizeOf(file);
                     bytesByPath += size;
                     if (bytesByPath > options.maxBodyBytes) {

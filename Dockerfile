@@ -36,9 +36,11 @@ LABEL org.opencontainers.image.title="SoapCLI" \
 # Never run as root. /work is where the command line client finds your files and the only place the web UI reads
 # attachments from, when a request names a file by path (mount them there); /config is where the web UI finds the
 # profiles and placeholders files (mount it there; without :ro, and with SOAPCLI_ALLOW_CONFIG_EDIT=true, the UI can edit them).
+# /workspaces is where the workspaces go, if you use them (SOAPCLI_WORKSPACES_DIR=/workspaces, and mount a volume there):
+# each folder in it has its own profiles, placeholder options, attachments and saved requests. It is not turned on by default.
 RUN useradd --system --uid 10001 --user-group --create-home --home-dir /home/soapcli --shell /usr/sbin/nologin soapcli \
- && mkdir -p /app /work /config \
- && chown soapcli:soapcli /work /config
+ && mkdir -p /app /work /config /workspaces \
+ && chown soapcli:soapcli /work /config /workspaces
 
 COPY --from=build /SoapCLI.jar /app/SoapCLI.jar
 

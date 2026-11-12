@@ -9,6 +9,7 @@ import java.net.HttpURLConnection;
 import java.net.Proxy;
 import java.net.URL;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.Map;
 
 /** The {@code serve} and {@code healthcheck} subcommands: start the web UI, and ask whether one is alive. */
@@ -32,7 +33,13 @@ public final class ServeCommand {
             return 0;
         }
 
-        if (!Files.isDirectory(options.attachmentsDir)) {
+        if (options.workspacesEnabled()) {
+            if (!Files.isDirectory(options.workspacesDir)) {
+                err.println("Error: the workspaces folder '" + options.workspacesDir + "' is not a directory "
+                        + "(--workspaces-dir / SOAPCLI_WORKSPACES_DIR). Create it first: each folder inside it is a workspace");
+                return 1;
+            }
+        } else if (!Files.isDirectory(options.attachmentsDir)) {
             err.println("Error: the attachments folder '" + options.attachmentsDir + "' is not a directory "
                     + "(--attachments-dir / SOAPCLI_ATTACHMENTS_DIR)");
             return 1;
@@ -59,6 +66,35 @@ public final class ServeCommand {
     private static void printBanner(ServeOptions o, int port, PrintStream out) {
         out.println("SoapCLI " + Version.get() + " web UI");
         out.println("  Listening on http://" + o.host + ":" + port);
+        if (o.workspacesEnabled()) {
+            printWorkspaces(o, out);
+        } else {
+            printSingleSet(o, out);
+        }
+        out.println("  Allowed destinations: " + (o.allowedHosts.isEmpty() ? "any host" : String.join(", ", o.allowedHosts)));
+        out.println("  UI login: " + (o.hasAuth() ? "required (user '" + o.uiUser + "')" : "NOT required"));
+        if (!o.isLoopbackOnly() && !o.hasAuth()) {
+            out.println();
+            out.println("WARNING: the UI is reachable from the network and has no login. Anyone who can reach it can");
+            out.println("         send requests from this machine, with the credentials of the profiles it holds.");
+            out.println("         Set --ui-user / --ui-password, restrict destinations with --allow-host, and publish the");
+            out.println("         port only where you mean to (for Docker: -p 127.0.0.1:8080:8080).");
+        }
+        if (!o.isLoopbackOnly() && o.configEditAllowed()) {
+            out.println();
+            out.println("WARNING: the UI may change the profiles file, so anyone who can open it can point a profile at another");
+            out.println("         destination, or at any file of this machine. Keep it for UIs with a login (--ui-user).");
+        }
+        if (!o.workspacesEnabled() && !o.isLoopbackOnly() && !o.attachmentsDirExplicit) {
+            out.println();
+            out.println("WARNING: users of the UI can attach, and so send to the destinations they may call, any file under");
+            out.println("         " + o.attachmentsDir + ". Choose a folder meant for that with --attachments-dir.");
+        }
+        out.flush();
+    }
+
+    /** The files of a server without workspaces: one profiles file, one placeholders file, one attachments folder. */
+    private static void printSingleSet(ServeOptions o, PrintStream out) {
         if (Files.isRegularFile(o.profileFile)) {
             String count;
             try {
@@ -85,26 +121,22 @@ public final class ServeCommand {
         }
         out.println("  Attachments by path: files under " + o.attachmentsDir
                 + (o.attachmentsDirExplicit ? "" : " (the working directory; change it with --attachments-dir)"));
-        out.println("  Allowed destinations: " + (o.allowedHosts.isEmpty() ? "any host" : String.join(", ", o.allowedHosts)));
-        out.println("  UI login: " + (o.hasAuth() ? "required (user '" + o.uiUser + "')" : "NOT required"));
-        if (!o.isLoopbackOnly() && !o.hasAuth()) {
-            out.println();
-            out.println("WARNING: the UI is reachable from the network and has no login. Anyone who can reach it can");
-            out.println("         send requests from this machine, with the credentials of the profiles it holds.");
-            out.println("         Set --ui-user / --ui-password, restrict destinations with --allow-host, and publish the");
-            out.println("         port only where you mean to (for Docker: -p 127.0.0.1:8080:8080).");
+    }
+
+    /** What a server with workspaces keeps, and where. */
+    private static void printWorkspaces(ServeOptions o, PrintStream out) {
+        Workspaces workspaces = new Workspaces(o);
+        List<String> names = workspaces.names();
+        out.println("  Workspaces: " + o.workspacesDir + " (" + (names.isEmpty() ? "none yet" : names.size() + ": " + String.join(", ", names)) + ")");
+        out.println("    Each has its own profiles.json, placeholders.json, attachments/ and requests/ (saved requests).");
+        out.println("    Create one from the UI" + (workspaces.manageReason() == null ? "" : " (off: " + workspaces.manageReason() + ")")
+                + ", or by making a folder in " + o.workspacesDir + ".");
+        out.println("  Editing profiles and placeholders from the UI: " + (o.configEditAllowed() ? "ALLOWED" : "off")
+                + (o.allowConfigEdit == null && o.configEditAllowed() ? " (this server listens on this machine only)" : ""));
+        out.println("  Saving requests to the workspaces from the UI: " + (o.libraryEditAllowed() ? "ALLOWED" : "off"));
+        if (!Files.isWritable(o.workspacesDir)) {
+            out.println("    but: " + o.workspacesDir + " is not writable, so nothing can be saved there (with Docker, mount it without :ro).");
         }
-        if (!o.isLoopbackOnly() && o.configEditAllowed()) {
-            out.println();
-            out.println("WARNING: the UI may change the profiles file, so anyone who can open it can point a profile at another");
-            out.println("         destination, or at any file of this machine. Keep it for UIs with a login (--ui-user).");
-        }
-        if (!o.isLoopbackOnly() && !o.attachmentsDirExplicit) {
-            out.println();
-            out.println("WARNING: users of the UI can attach, and so send to the destinations they may call, any file under");
-            out.println("         " + o.attachmentsDir + ". Choose a folder meant for that with --attachments-dir.");
-        }
-        out.flush();
     }
 
     /** Exit code 0 if a UI answers {@code /healthz} on this machine's port. Used by the Docker HEALTHCHECK. */

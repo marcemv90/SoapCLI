@@ -1,0 +1,20 @@
+{
+  // Options for the placeholders (___NAME:default___) of the requests of this workspace: each becomes a dropdown in the UI.
+  "placeholders": {
+    "ENV": {
+      "description": "The environment the request is about",
+      "options": ["demo", "acceptance", { "value": "production", "label": "Production (careful)" }]
+    },
+    "ORDER_ID": {
+      "description": "Orders of the demo data set",
+      "options": ["1001", "1002", { "value": "2001", "label": "Large order" }]
+    },
+    "COUNTRY": {
+      "options": [
+        { "value": "ES", "label": "Spain" },
+        { "value": "NL", "label": "Netherlands" },
+        { "value": "DE", "label": "Germany" }
+      ]
+    }
+  }
+}

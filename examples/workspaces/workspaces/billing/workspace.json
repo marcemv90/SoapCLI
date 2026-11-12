@@ -1,0 +1,8 @@
+{
+  // Shown in the web UI next to the name of the workspace
+  "description": "Billing services: orders and invoices",
+  // true: it can be used but not changed from the UI (no saving, no editing profiles); an administrator edits the files by hand
+  "readOnly": false,
+  // Where this workspace may send, on top of what the server allows ([] = no extra limit), e.g. ["mock", "*.billing.example.com"]
+  "allowedHosts": []
+}

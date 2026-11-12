@@ -23,6 +23,9 @@ image** that does both.
   server, so they reach anything that machine reaches, with its client certificates, proxies and profiles.
 - **Docker** – one image, the UI by default and the command line client on demand, for machines that have Docker but not
   Java.
+- **Workspaces, to share with a team** – start the server with `--workspaces-dir` and every folder in it is a workspace with
+  its own profiles, placeholder options, attachments and saved requests, kept on the server for whoever opens it (a link opens
+  a saved request), also usable from the command line with `--workspace`. See [Workspaces](https://marcemv90.github.io/SoapCLI/workspaces/).
 
 ---
 
@@ -124,7 +127,8 @@ src/main/java/io/github/marcemv90/soapcli/
   core/   the SOAP client: request building, HTTP transport, TLS, proxy, profiles, XML helpers.
           No console I/O and no System.exit, so it is shared by both front ends.
   cli/    the command line front end: option parsing, output, colours, exit codes.
-  web/    the web server (JDK built-in, no extra dependency): JSON API, static files, login, destination policy.
+  web/    the web server (JDK built-in, no extra dependency): JSON API, static files, login, destination policy,
+          workspaces and the library of saved requests.
 src/main/resources/web/   the compiled web UI, embedded in the JAR (generated: see web-ui/).
 src/test/java/...   JUnit 5 tests, including real TLS / mutual TLS / authenticating-proxy tests on local sockets.
 web-ui/             source of the web UI (React, TypeScript, Tailwind, TailAdmin) and its tests.

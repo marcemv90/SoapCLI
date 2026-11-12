@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertIcon } from "@/icons";
-import { useWorkspace } from "@/state/workspace";
+import { useApp } from "@/state/app";
 
 function Count({ n }: { n: number }) {
   return n > 0 ? <Badge variant="light" color="primary" size="sm" className="ms-1.5 px-1.5">{n}</Badge> : null;
@@ -18,7 +18,7 @@ function Count({ n }: { n: number }) {
 
 /** Shown only when the page was opened without the SoapCLI server behind it (a static copy, or `npm run dev` alone). */
 function NoServerNotice() {
-  const { server, refreshServer } = useWorkspace();
+  const { server, refreshServer } = useApp();
   if (!server.loaded || server.info) return null;
   return (
     <Alert variant="warning">
@@ -35,7 +35,7 @@ function NoServerNotice() {
 }
 
 export function RequestPage() {
-  const { draft, send, sending, serverPreview, page, settings } = useWorkspace();
+  const { draft, send, sending, serverPreview, page, settings, notice, dismissNotice } = useApp();
   const [tab, setTab] = useState("body");
   const stacked = settings.requestLayout === "stacked";
 
@@ -58,6 +58,15 @@ export function RequestPage() {
       <EndpointBar />
       <AttachmentLoadDialog />
       <NoServerNotice />
+      {notice && (
+        <Alert variant={notice.kind === "error" ? "destructive" : "info"}>
+          <AlertIcon />
+          <AlertDescription>
+            {notice.text}
+            <span className="mt-2 block"><Button variant="outline" size="xs" onClick={dismissNotice}>Dismiss</Button></span>
+          </AlertDescription>
+        </Alert>
+      )}
       {warnings.length > 0 && (
         <Alert variant="warning">
           <AlertIcon />

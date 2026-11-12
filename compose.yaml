@@ -18,9 +18,14 @@ services:
       # SOAPCLI_ALLOW_CONFIG_EDIT: "true"
       # Secrets referenced from profiles as ${ACC_CREDENTIALS}:
       # ACC_CREDENTIALS: ${ACC_CREDENTIALS:-}
+      # Workspaces instead of the single set of files below: one folder per team or project, each with its own profiles,
+      # placeholder options, attachments and saved requests, shared by whoever opens it. Needs the ./workspaces volume below
+      # (without :ro); --profile-file, --placeholders-file and --attachments-dir are not used then.
+      # SOAPCLI_WORKSPACES_DIR: /workspaces
     volumes:
       - ./config:/config:ro          # profiles.json and placeholders.json (optional); drop :ro to let the UI edit them
       # - ./attachments:/work:ro     # files the UI may attach by path (it can read nothing else); optional
+      # - ./workspaces:/workspaces   # the workspaces (see SOAPCLI_WORKSPACES_DIR above); the container user must be able to write to it
     restart: unless-stopped
     read_only: true
     tmpfs:

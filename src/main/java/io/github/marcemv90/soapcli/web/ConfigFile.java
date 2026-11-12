@@ -13,6 +13,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
 /**
@@ -30,18 +31,34 @@ final class ConfigFile {
     /** The revision of a file that does not exist yet. */
     static final String MISSING = "missing";
 
+    /** A file that may hold secrets (the profiles) is created readable by its owner only. */
+    static final Set<PosixFilePermission> PRIVATE = PosixFilePermissions.fromString("rw-------");
+    /** A file meant to be shared (a saved request) is created readable by others, so that it can be backed up or edited by hand. */
+    static final Set<PosixFilePermission> SHARED = PosixFilePermissions.fromString("rw-r--r--");
+
     private final Path file;
     private final String label;
-    private final String notAllowedReason;
+    private final Supplier<String> notAllowedReason;
+    private final Set<PosixFilePermission> newFilePermissions;
 
     /**
      * @param label            what the file is called in messages, e.g. "profiles file"
      * @param notAllowedReason why the server does not let the UI change it, or {@code null} if it does
      */
     ConfigFile(Path file, String label, String notAllowedReason) {
+        this(file, label, () -> notAllowedReason, PRIVATE);
+    }
+
+    /**
+     * @param notAllowedReason asked every time, because the answer can change while the server runs (a workspace that
+     *                         an administrator marks as read-only); {@code null} means that the UI may change the file
+     * @param newFilePermissions the permissions a file gets when it is created
+     */
+    ConfigFile(Path file, String label, Supplier<String> notAllowedReason, Set<PosixFilePermission> newFilePermissions) {
         this.file = file;
         this.label = label;
         this.notAllowedReason = notAllowedReason;
+        this.newFilePermissions = newFilePermissions;
     }
 
     Path path() {
@@ -83,8 +100,9 @@ final class ConfigFile {
 
     /** Why the file cannot be edited from the UI, or {@code null} if it can. */
     String readOnlyReason() {
-        if (notAllowedReason != null) {
-            return notAllowedReason;
+        String notAllowed = notAllowedReason.get();
+        if (notAllowed != null) {
+            return notAllowed;
         }
         if (exists()) {
             return Files.isWritable(file) ? null
@@ -162,12 +180,12 @@ final class ConfigFile {
         }
     }
 
-    /** The file keeps the permissions it had (a profiles file is often 600); a new one is private to its owner. */
-    private static void keepPermissions(Path original, Path temp) {
+    /** The file keeps the permissions it had (a profiles file is often 600); a new one gets {@link #newFilePermissions}. */
+    private void keepPermissions(Path original, Path temp) {
         try {
             Set<PosixFilePermission> permissions = Files.exists(original)
                     ? Files.getPosixFilePermissions(original)
-                    : PosixFilePermissions.fromString("rw-------");
+                    : newFilePermissions;
             Files.setPosixFilePermissions(temp, permissions);
         } catch (UnsupportedOperationException | IOException ignored) {
             // not a POSIX file system (Windows): nothing to keep

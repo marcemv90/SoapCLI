@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { ServerError, fetchServerInfo, sendViaServer, toServerRequest } from "../src/lib/transports/server";
+import {
+  ServerError, checkAttachment, createWorkspace, deleteSavedRequest, fetchLibrary, fetchProfileRequest, fetchSavedRequest, fetchServerInfo,
+  fetchServerProfiles, fetchWorkspaceInfo, fetchWorkspaces, formatViaServer, removeWorkspace, saveSavedRequest, sendViaServer, setWorkspace,
+  toServerRequest,
+} from "../src/lib/transports/server";
 import { shellQuote, toCliCommand, toCurl } from "../src/lib/command";
 import { ENV12, attachment, draft, header, pathAttachment } from "./helpers";
 
@@ -159,5 +163,148 @@ describe("equivalent commands", () => {
 
   it("writes no curl for MTOM, which curl cannot rebuild", () => {
     expect(toCurl(d, { ...view, mtom: true })).toBeNull();
+  });
+});
+
+describe("calls made for a workspace", () => {
+  /** Records the calls and answers each with something every one of them can read (or the text it is told to). */
+  function recorder(answer = '{"headers":[],"request":{"headers":[],"attachments":[],"warnings":[]}}') {
+    const calls: { url: string; method: string; body?: string }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body as string | undefined });
+      return new Response(answer, { status: 200 });
+    }));
+    return calls;
+  }
+  const done = () => {
+    setWorkspace(null);
+    vi.unstubAllGlobals();
+  };
+
+  it("sends everything that belongs to a workspace to the workspace, and the rest to the server", async () => {
+    const calls = recorder();
+    setWorkspace("billing");
+    await fetchServerProfiles();
+    await fetchWorkspaceInfo();
+    await fetchLibrary();
+    await checkAttachment("doc.txt");
+    await sendViaServer(draft());
+    await fetchServerInfo();
+    await fetchWorkspaces();
+    await formatViaServer("<a/>");
+    expect(calls.map((c) => c.url)).toEqual([
+      "api/workspaces/billing/profiles",
+      "api/workspaces/billing/info",
+      "api/workspaces/billing/requests",
+      "api/workspaces/billing/attachments/check",
+      "api/workspaces/billing/send",
+      "api/info",
+      "api/workspaces",
+      "api/format",
+    ]);
+    done();
+  });
+
+  it("calls the same addresses as before without a workspace, so a server that has none works as it always did", async () => {
+    const calls = recorder();
+    setWorkspace(null);
+    await fetchServerProfiles();
+    await fetchServerInfo();
+    await checkAttachment("doc.txt");
+    expect(calls.map((c) => c.url)).toEqual(["api/profiles", "api/info", "api/attachments/check"]);
+    done();
+  });
+
+  it("changes the workspace the calls are made for as soon as another is opened", async () => {
+    const calls = recorder();
+    setWorkspace("billing");
+    await fetchServerProfiles();
+    setWorkspace("shipping");
+    await fetchServerProfiles();
+    expect(calls.map((c) => c.url)).toEqual(["api/workspaces/billing/profiles", "api/workspaces/shipping/profiles"]);
+    done();
+  });
+
+  it("encodes what it puts in an address", async () => {
+    const calls = recorder();
+    setWorkspace("my.team_1");
+    await fetchProfileRequest("acc/ept 1");
+    await fetchSavedRequest("a/b c");
+    expect(calls.map((c) => c.url)).toEqual([
+      "api/workspaces/my.team_1/profiles/acc%2Fept%201/request",
+      "api/workspaces/my.team_1/requests/a%2Fb%20c",
+    ]);
+    done();
+  });
+
+  it("creates and removes workspaces, and saves and deletes requests, with JSON posts", async () => {
+    const calls = recorder('{"movedTo":".removed-old-1"}');
+    setWorkspace("billing");
+    await createWorkspace({ name: "new", description: "d" });
+    expect(await removeWorkspace("old")).toBe(".removed-old-1");
+    await saveSavedRequest({ name: "n", folder: "f", draft: { body: "<a/>" } as never });
+    await saveSavedRequest({ id: "n-1", revision: "r1", name: "n", folder: "", draft: { body: "<a/>" } as never });
+    await deleteSavedRequest("n-1", "r2");
+    expect(calls.map((c) => [c.method, c.url])).toEqual([
+      ["POST", "api/workspaces/create"],
+      ["POST", "api/workspaces/remove"],
+      ["POST", "api/workspaces/billing/requests/save"],
+      ["POST", "api/workspaces/billing/requests/save"],
+      ["POST", "api/workspaces/billing/requests/delete"],
+    ]);
+    expect(JSON.parse(calls[0].body!)).toEqual({ name: "new", description: "d" });
+    expect(JSON.parse(calls[1].body!)).toEqual({ name: "old" });
+    expect(JSON.parse(calls[2].body!)).toEqual({ name: "n", folder: "f", draft: { body: "<a/>" } });
+    expect(JSON.parse(calls[3].body!)).toMatchObject({ id: "n-1", revision: "r1" });
+    expect(JSON.parse(calls[4].body!)).toEqual({ id: "n-1", revision: "r2" });
+    done();
+  });
+
+  it("reports what the server said when a save is refused because someone else changed the request", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { category: "conflict", message: "changed since you opened it" } }), { status: 409 })));
+    setWorkspace("billing");
+    await expect(saveSavedRequest({ id: "x", revision: "old", name: "n", folder: "", draft: { body: "<a/>" } as never }))
+      .rejects.toMatchObject({ category: "conflict", status: 409, message: "changed since you opened it" });
+    done();
+  });
+});
+
+describe("equivalent commands in a workspace", () => {
+  const d = draft({
+    profile: "acc",
+    body: ENV12.replace("<ping/>", "<a>cid:doc</a><b>cid:abs</b>"),
+    attachments: [pathAttachment("doc", "invoices/one.pdf"), pathAttachment("abs", "/elsewhere/two.pdf")],
+  });
+
+  it("names the workspace and the folder that holds the workspaces, and finds the attachments in the workspace", () => {
+    const cmd = toCliCommand(d, "jar", undefined, { name: "billing", dir: "/srv/workspaces" });
+    expect(cmd).toContain("--workspaces-dir '/srv/workspaces'");
+    expect(cmd).toContain("--workspace 'billing'");
+    expect(cmd).toContain("--profile 'acc'");
+    expect(cmd).toContain("--attachment 'doc=/srv/workspaces/billing/attachments/invoices/one.pdf'");
+    expect(cmd).toContain("--attachment 'abs=/elsewhere/two.pdf'");
+    expect(cmd.split("\n")[0]).toContain("java -jar");
+  });
+
+  it("asks for the folder when it is not known", () => {
+    const cmd = toCliCommand(d, "jar", undefined, { name: "billing" });
+    expect(cmd.split("\n")[0]).toContain("--workspaces-dir (or SOAPCLI_WORKSPACES_DIR)");
+    expect(cmd).not.toContain("--workspaces-dir '");
+    expect(cmd).toContain("--attachment 'doc=invoices/one.pdf'");
+  });
+
+  it("mounts the workspaces in the container", () => {
+    const cmd = toCliCommand(d, "docker", undefined, { name: "billing", dir: "/workspaces" });
+    expect(cmd).toContain('-v "$PWD/workspaces:/workspaces:ro" -e SOAPCLI_WORKSPACES_DIR=/workspaces ghcr.io/marcemv90/soapcli');
+    expect(cmd).toContain("--workspace 'billing'");
+    expect(cmd).not.toContain("--workspaces-dir");
+    expect(cmd).toContain("--attachment 'doc=/workspaces/billing/attachments/invoices/one.pdf'");
+    expect(cmd.split("\n")[0]).toContain("change it to yours");
+  });
+
+  it("is the command of before when there is no workspace", () => {
+    const cmd = toCliCommand(d, "jar");
+    expect(cmd).not.toContain("--workspace");
+    expect(cmd).toContain("--attachment 'doc=invoices/one.pdf'");
   });
 });

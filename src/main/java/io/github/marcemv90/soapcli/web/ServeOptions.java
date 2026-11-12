@@ -35,6 +35,13 @@ public final class ServeOptions {
     public Path attachmentsDir;
     /** Whether {@link #attachmentsDir} was chosen, as opposed to being the working directory by default. */
     public boolean attachmentsDirExplicit;
+    /**
+     * The folder that holds the workspaces, one sub-folder each, or {@code null} when workspaces are not used (then the
+     * profiles file, the placeholders file and the attachments folder above are the one and only configuration).
+     */
+    public Path workspacesDir;
+    /** The options that name a single set of files, when given on the command line: workspaces replace them. */
+    private final List<String> singleSetFlags = new ArrayList<>();
     public long maxBodyBytes = 25L * 1024 * 1024;
     public long maxResponseBytes = 20L * 1024 * 1024;
     public boolean noInsecureTls;
@@ -62,6 +69,24 @@ public final class ServeOptions {
                 ? "Editing from the UI was switched off on this server (--no-config-edit)."
                 : "Editing from the UI is off because this server listens on a network address. "
                 + "To turn it on, start it with --allow-config-edit (and set a login).";
+    }
+
+    public boolean workspacesEnabled() {
+        return workspacesDir != null;
+    }
+
+    /**
+     * Whether the UI may save and delete the requests of a workspace's library. Unlike the profiles, these hold no
+     * credentials and do not decide where anything is sent, so a server on a network address allows it without
+     * {@code --allow-config-edit}: sharing requests is what workspaces are for. {@code --no-config-edit} still forbids it.
+     */
+    public boolean libraryEditAllowed() {
+        return allowConfigEdit == null || allowConfigEdit;
+    }
+
+    /** Why the UI may not change a workspace's library, or {@code null} if it may. */
+    public String libraryEditOffReason() {
+        return libraryEditAllowed() ? null : "Editing from the UI was switched off on this server (--no-config-edit).";
     }
 
     /** {@code SOAPCLI_PLACEHOLDERS_FILE}, else {@code ~/.config/soap-cli-placeholders.json}. */
@@ -114,6 +139,9 @@ public final class ServeOptions {
         if (notBlank(env.get("SOAPCLI_ALLOW_CONFIG_EDIT"))) {
             o.allowConfigEdit = isTrue(env.get("SOAPCLI_ALLOW_CONFIG_EDIT"));
         }
+        if (notBlank(env.get("SOAPCLI_WORKSPACES_DIR"))) {
+            o.workspacesDir = Paths.get(env.get("SOAPCLI_WORKSPACES_DIR").trim()).toAbsolutePath().normalize();
+        }
         o.attachmentsDir = Paths.get("").toAbsolutePath().normalize();
         if (notBlank(env.get("SOAPCLI_ATTACHMENTS_DIR"))) {
             o.attachmentsDir = Paths.get(env.get("SOAPCLI_ATTACHMENTS_DIR").trim()).toAbsolutePath().normalize();
@@ -141,6 +169,11 @@ public final class ServeOptions {
                     break;
                 case "--placeholders-file":
                     o.placeholdersFile = Paths.get(nonEmpty(value(args, i, inline, arg), arg));
+                    o.singleSetFlags.add(arg);
+                    i += inline == null ? 1 : 0;
+                    break;
+                case "--workspaces-dir":
+                    o.workspacesDir = Paths.get(nonEmpty(value(args, i, inline, arg), arg)).toAbsolutePath().normalize();
                     i += inline == null ? 1 : 0;
                     break;
                 case "--no-insecure-tls":
@@ -178,11 +211,13 @@ public final class ServeOptions {
                     break;
                 case "--profile-file":
                     o.profileFile = Paths.get(nonEmpty(value(args, i, inline, arg), arg));
+                    o.singleSetFlags.add(arg);
                     i += inline == null ? 1 : 0;
                     break;
                 case "--attachments-dir":
                     o.attachmentsDir = Paths.get(nonEmpty(value(args, i, inline, arg), arg)).toAbsolutePath().normalize();
                     o.attachmentsDirExplicit = true;
+                    o.singleSetFlags.add(arg);
                     i += inline == null ? 1 : 0;
                     break;
                 case "--max-body-mb":
@@ -200,6 +235,12 @@ public final class ServeOptions {
 
         if (o.port < 0 || o.port > 65535) {
             throw new ConfigException("The port must be between 0 and 65535");
+        }
+        // The Docker image sets the three environment variables of the single set of files, so those are tolerated (and not
+        // used); naming them on the command line next to the workspaces is a mistake worth telling about.
+        if (o.workspacesDir != null && !o.singleSetFlags.isEmpty()) {
+            throw new ConfigException(String.join(", ", o.singleSetFlags) + " cannot be used with --workspaces-dir: "
+                    + "every workspace has its own profiles.json, placeholders.json and attachments folder");
         }
         if ((o.uiUser == null) != (o.uiPassword == null)) {
             throw new ConfigException("The UI login needs both a user and a password "
@@ -267,6 +308,9 @@ public final class ServeOptions {
                 + "                            server listens on this machine; --no-config-edit forbids it)  [SOAPCLI_ALLOW_CONFIG_EDIT]\n"
                 + "  --attachments-dir <dir>   Folder the UI may read attachments from, by path; nothing outside it can be\n"
                 + "                            attached (default: the working directory)  [SOAPCLI_ATTACHMENTS_DIR]\n"
+                + "  --workspaces-dir <dir>    Use workspaces: every sub-folder of <dir> is one, with its own profiles.json,\n"
+                + "                            placeholders.json, attachments/ and saved requests/ (replaces the three options above)\n"
+                + "                            [SOAPCLI_WORKSPACES_DIR]\n"
                 + "\n"
                 + "Access control (strongly recommended when listening on a network address):\n"
                 + "  --ui-user <name>          Require this user (HTTP Basic)  [SOAPCLI_UI_USER]\n"

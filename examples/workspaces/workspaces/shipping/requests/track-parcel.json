@@ -1,0 +1,27 @@
+{
+  "app": "soapcli",
+  "version": 1,
+  "name": "Track a parcel",
+  "folder": "Tracking",
+  "updatedAt": "2026-11-12T09:10:00Z",
+  "draft": {
+    "endpoint": "",
+    "body": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:trk=\"http://example.com/tracking\">\n  <soapenv:Header/>\n  <soapenv:Body>\n    <trk:Track>\n      <trk:Parcel>___PARCEL:NL1234567890___</trk:Parcel>\n    </trk:Track>\n  </soapenv:Body>\n</soapenv:Envelope>\n",
+    "soapVersion": "auto",
+    "soapAction": "urn:Track",
+    "headers": [],
+    "args": {},
+    "mtom": false,
+    "options": {
+      "timeoutSeconds": 60,
+      "followRedirects": false,
+      "insecure": false
+    },
+    "auth": {
+      "kind": "none",
+      "user": ""
+    },
+    "attachments": [],
+    "profile": "tracking"
+  }
+}

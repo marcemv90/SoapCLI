@@ -12,7 +12,7 @@ import { emptyDefinition } from "@/lib/profile-form";
 import {
   deleteProfile, fetchProfileDefinition, fetchProfileRequest, type ProfileDefinition, type SaveResult, type ServerProfile,
 } from "@/lib/transports/server";
-import { useWorkspace } from "@/state/workspace";
+import { useApp } from "@/state/app";
 import { cn } from "@/utils";
 
 /** The order of the profiles documentation; anything else follows alphabetically. */
@@ -96,7 +96,7 @@ function ProfileDetail({ profile, editable, onEdit, onDelete, busy }: {
   onDelete: () => void;
   busy: "edit" | "delete" | null;
 }) {
-  const { patch, navigate } = useWorkspace();
+  const { patch, navigate } = useApp();
   const [problem, setProblem] = useState<string | null>(null);
   const settings = profile.settings ?? {};
   const parent = typeof settings.extends === "string" ? settings.extends : null;
@@ -162,7 +162,7 @@ function ProfileDetail({ profile, editable, onEdit, onDelete, busy }: {
 type Mode = { kind: "view" } | { kind: "create" } | { kind: "edit"; definition: ProfileDefinition; round: number };
 
 export function ProfilesPage() {
-  const { server, draft, refreshServer } = useWorkspace();
+  const { server, draft, refreshServer } = useApp();
   const [chosen, setChosen] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: "view" });
   const [busy, setBusy] = useState<"edit" | "delete" | null>(null);

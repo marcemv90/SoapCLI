@@ -187,6 +187,28 @@ class ProfilesTest {
     }
 
     @Test
+    void relativePathsStartInTheBaseFolderWhenOneIsGiven() throws IOException {
+        Profiles p = profiles("{\"profiles\":{\"w\":{\"requestFile\":\"requests/r.xml\",\"attachments\":{\"a\":\"attachments/../attachments/a.bin\"},"
+                + "\"keystore\":{\"path\":\"certs/client.p12\"},\"truststore\":{\"path\":\"/abs/trust.jks\"}}}}");
+        java.nio.file.Path base = Paths.get("/srv/ws/billing");
+        CallConfig c = new CallConfig();
+        p.resolve("w", Collections.emptyMap()).applyTo(c, "/home/me", base);
+        assertEquals(base.resolve("requests/r.xml").toString(), c.requestFile);
+        assertEquals(base.resolve("attachments/a.bin").toString(), c.attachments.get("a"), "and the path is tidied");
+        assertEquals(base.resolve("certs/client.p12").toString(), c.transport.tls.keystorePath);
+        assertEquals("/abs/trust.jks", c.transport.tls.truststorePath, "an absolute path stays as it is");
+
+        CallConfig plain = new CallConfig();
+        p.resolve("w", Collections.emptyMap()).applyTo(plain, "/home/me");
+        assertEquals("requests/r.xml", plain.requestFile, "without a base folder nothing changes: the working directory");
+        assertEquals("certs/client.p12", plain.transport.tls.keystorePath);
+
+        CallConfig home = new CallConfig();
+        profiles("{\"profiles\":{\"h\":{\"requestFile\":\"~/r.xml\"}}}").resolve("h", Collections.emptyMap()).applyTo(home, "/home/me", base);
+        assertEquals("/home/me/r.xml", home.requestFile, "~ still means the home folder");
+    }
+
+    @Test
     void autoInAProfileResetsTheVersion() throws IOException {
         Profile p = profiles("{\"profiles\":{\"a\":{\"soapVersion\":\"auto\"}}}").resolve("a", Collections.emptyMap());
         CallConfig c = new CallConfig();

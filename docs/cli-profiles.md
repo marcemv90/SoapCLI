@@ -28,6 +28,15 @@ exception is a value in `args`, where an empty string is a meaningful override.)
     - **Linux/macOS** – e.g. `/home/user/.config/soap-cli-profiles.json`.
     - **Windows** – e.g. `C:\Users\user\.config\soap-cli-profiles.json`.
 
+## Workspaces
+
+A [workspace](workspaces.md) is a folder with its own `profiles.json` (and a `secrets.env` for the `${VAR}` its profiles use).
+`--workspace <name>`, with `--workspaces-dir <dir>` (or `SOAPCLI_WORKSPACES_DIR`), uses it instead of the profiles file above:
+
+```bash
+java -jar SoapCLI.jar --workspaces-dir ./workspaces --workspace billing --profile acceptance --request-file order.xml
+```
+
 ## Profiles file structure
 
 The profiles file is a JSON object with a top-level `profiles` object whose keys are profile names. Comments
@@ -137,7 +146,7 @@ Numbers and booleans may also be written as strings (`"port": "3128"`, `"mtom": 
 and a value of the wrong type is an error.
 
 Relative paths (`requestFile`, keystore, attachments...) are resolved against the **current directory**, not against the
-profiles file. A leading `~/` means your home directory.
+profiles file; in a [workspace](workspaces.md), against the **workspace folder**. A leading `~/` means your home directory.
 
 ## Environment variables in profiles
 

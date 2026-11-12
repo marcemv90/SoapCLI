@@ -5,12 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { EyeCloseIcon, EyeIcon, PlusIcon, TrashBinIcon } from "@/icons";
 import { newId, type AuthKind } from "@/lib/types";
-import { useWorkspace } from "@/state/workspace";
+import { useApp } from "@/state/app";
 
 const COMMON_HEADERS = ["SOAPAction", "Accept", "Accept-Language", "Content-Type", "X-Correlation-ID", "X-Request-ID", "X-Api-Key", "X-Forwarded-For"];
 
 export function HeadersTab() {
-  const { draft, update } = useWorkspace();
+  const { draft, update } = useApp();
   const setRow = (id: string, change: Partial<{ name: string; value: string; enabled: boolean }>) =>
     update((d) => ({ ...d, headers: d.headers.map((h) => (h.id === id ? { ...h, ...change } : h)) }));
   return (
@@ -69,7 +69,7 @@ function SecretInput({ label, value, onChange, placeholder }: { label: string; v
 }
 
 export function AuthTab() {
-  const { draft, patch } = useWorkspace();
+  const { draft, patch } = useApp();
   const auth = draft.auth;
   const set = (change: Partial<typeof auth>) => patch({ auth: { ...auth, ...change } });
   return (
@@ -96,7 +96,7 @@ export function AuthTab() {
 }
 
 export function OptionsTab() {
-  const { draft, patch, server } = useWorkspace();
+  const { draft, patch, server } = useApp();
   const opts = draft.options;
   const set = (change: Partial<typeof opts>) => patch({ options: { ...opts, ...change } });
   const insecureAllowed = server.info?.insecureTlsAllowed !== false;

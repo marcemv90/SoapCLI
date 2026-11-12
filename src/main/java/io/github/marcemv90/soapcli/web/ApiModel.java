@@ -146,6 +146,109 @@ public final class ApiModel {
         public String placeholdersFile;
         /** Whether the server lets the UI change the profiles and placeholders files (they may still be read-only). */
         public boolean configEditAllowed;
+        /** Whether the server uses workspaces (then the files above are those of {@link #workspace}, if one was asked for). */
+        public boolean workspacesEnabled;
+        public String workspacesDir;
+        /** The workspace this answer is about; only in the answer of {@code /api/workspaces/{name}/info}. */
+        public WorkspaceSummary workspace;
+    }
+
+    /** One workspace: a folder with its own profiles, placeholder options, attachments and saved requests. */
+    public static class WorkspaceSummary {
+        public String name;
+        public String description;
+        /** An administrator marked it read-only ({@code "readOnly": true} in its {@code workspace.json}). */
+        public boolean readOnly;
+        /** Destinations this workspace is limited to, on top of what the whole server allows. */
+        public List<String> allowedHosts = new ArrayList<>();
+        /** A problem with its {@code workspace.json}. */
+        public String error;
+        /** How many profiles, placeholders with options and saved requests it has; absent when they cannot be counted. */
+        public Integer profiles;
+        public Integer placeholders;
+        public Integer requests;
+    }
+
+    public static class WorkspacesResponse {
+        public boolean enabled;
+        public String dir;
+        /** Whether the UI may create and remove workspaces. */
+        public boolean manageable;
+        /** Why not, when it may not. */
+        public String manageReason;
+        public List<WorkspaceSummary> workspaces = new ArrayList<>();
+    }
+
+    public static class CreateWorkspaceRequest {
+        public String name;
+        public String description;
+    }
+
+    public static class RemoveWorkspaceRequest {
+        public String name;
+    }
+
+    public static class RemoveWorkspaceResponse {
+        /** The folder the workspace was moved to: it is set aside, not deleted. */
+        public String movedTo;
+    }
+
+    // ---- the library of saved requests of a workspace -------------------------------------------------------------------
+
+    /** A saved request in a list: enough to show and search it, without its body. */
+    public static class SavedRequestSummary {
+        /** Also the name of its file, {@code requests/<id>.json}. */
+        public String id;
+        public String name;
+        /** Groups requests in the list; empty for none. */
+        public String folder;
+        /** When it was last saved (ISO 8601). */
+        public String updatedAt;
+        public String endpoint;
+        public String soapAction;
+        public String profile;
+        public String revision;
+        /** Why this file cannot be used as a saved request. */
+        public String error;
+    }
+
+    public static class LibraryResponse {
+        public boolean editable;
+        public String readOnlyReason;
+        public List<SavedRequestSummary> requests = new ArrayList<>();
+    }
+
+    /** A saved request in full. */
+    public static class SavedRequestDetail {
+        public String id;
+        public String name;
+        public String folder;
+        public String updatedAt;
+        public String revision;
+        /** The request as the page keeps it: endpoint, body, headers, variables, attachment paths, profile... */
+        public JsonNode draft;
+    }
+
+    /** Saves a request: a new one when {@code id} is absent, else the one it names (which must still be at {@code revision}). */
+    public static class SaveSavedRequest {
+        public String id;
+        public String revision;
+        public String name;
+        public String folder;
+        public JsonNode draft;
+    }
+
+    public static class SaveSavedResponse {
+        public String id;
+        public String revision;
+        public String updatedAt;
+        /** Things that were not saved, such as the value of a header that holds a credential. */
+        public List<String> warnings = new ArrayList<>();
+    }
+
+    public static class SavedRequestRef {
+        public String id;
+        public String revision;
     }
 
     public static class ProfileInfo {

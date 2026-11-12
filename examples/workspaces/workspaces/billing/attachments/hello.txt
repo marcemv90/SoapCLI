@@ -1,0 +1,4 @@
+Hello from SoapCLI!
+
+This file is one of the examples the web UI can attach by path:
+  attachments/hello.txt

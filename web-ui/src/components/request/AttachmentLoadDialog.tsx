@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { AlertIcon, CheckIcon } from "@/icons";
 import { formatBytes } from "@/lib/format";
 import { summarize, type LoadItem } from "@/lib/load-attachments";
-import { useWorkspace } from "@/state/workspace";
+import { useApp } from "@/state/app";
 
 function StateIcon({ state }: { state: LoadItem["state"] }) {
   if (state === "loading") return <Spinner className="size-4 text-brand-500" />;
@@ -19,7 +19,7 @@ function StateIcon({ state }: { state: LoadItem["state"] }) {
  * how far along they all are. If one cannot be loaded it stays open with the reason, and nothing has been sent.
  */
 export function AttachmentLoadDialog() {
-  const { attachmentLoad, cancel, dismissAttachmentLoad, send } = useWorkspace();
+  const { attachmentLoad, cancel, dismissAttachmentLoad, send } = useApp();
   const running = attachmentLoad?.status === "running";
   const summary = summarize(attachmentLoad?.items ?? []);
 

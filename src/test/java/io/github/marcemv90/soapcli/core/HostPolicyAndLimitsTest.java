@@ -29,6 +29,26 @@ class HostPolicyAndLimitsTest {
     // ---- patterns -------------------------------------------------------------------------------------------------
 
     @Test
+    void aPolicyCanBeNarrowedByAnotherButNeverWidened() {
+        HostPolicy server = new HostPolicy(Arrays.asList("*.example.com"));
+        HostPolicy workspace = new HostPolicy(Arrays.asList("api.example.com", "other.net"));
+        HostPolicy both = server.and(workspace);
+        assertTrue(both.allows("api.example.com"));
+        assertFalse(both.allows("www.example.com"), "the workspace allows only its own hosts");
+        assertFalse(both.allows("other.net"), "and the server does not allow this one, whatever the workspace says");
+        assertFalse(both.isOpen());
+        assertEquals(Arrays.asList("*.example.com"), both.patterns());
+        assertTrue(server.allows("www.example.com"), "the original is untouched");
+        assertTrue(assertThrows(HostNotAllowedException.class, () -> both.check("www.example.com")).getMessage().contains("api.example.com"));
+
+        HostPolicy open = new HostPolicy(Collections.emptyList());
+        assertFalse(open.and(workspace).allows("www.example.com"), "an open server is narrowed by the workspace");
+        assertTrue(server.and(open) == server && server.and(null) == server, "an open workspace changes nothing");
+        assertTrue(open.and(open).isOpen());
+        assertFalse(server.and(workspace).and(new HostPolicy(Arrays.asList("x.example.com"))).allows("api.example.com"), "narrowing chains");
+    }
+
+    @Test
     void exactNamesAreCaseInsensitiveAndIgnoreThePort() {
         HostPolicy p = new HostPolicy(Arrays.asList("API.example.com", "10.0.0.5"));
         assertTrue(p.allows("api.EXAMPLE.com"));

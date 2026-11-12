@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertIcon, DownloadIcon, InfoCircleIcon, SendIcon } from "@/icons";
 import { base64ToBytes, downloadFile, formatBytes, formatDuration } from "@/lib/format";
 import type { HeaderPair, RequestView, ResponseView } from "@/lib/types";
-import { useWorkspace, type UiError } from "@/state/workspace";
+import { useApp, type UiError } from "@/state/app";
 
 function HeadersTable({ headers, empty }: { headers: HeaderPair[]; empty: string }) {
   if (headers.length === 0) return <p className="text-sm text-gray-500 dark:text-gray-400">{empty}</p>;
@@ -40,7 +40,7 @@ const ERROR_TITLES: Record<string, string> = {
 };
 
 function ErrorPanel({ error }: { error: UiError }) {
-  const { refreshServer } = useWorkspace();
+  const { refreshServer } = useApp();
   const title = error.kind === "cancelled" ? "Cancelled" : ERROR_TITLES[error.category ?? ""] ?? "The SoapCLI server reported a problem";
   return (
     <div className="flex flex-col gap-4">
@@ -114,7 +114,7 @@ export function RequestInspector({ view, onRefresh }: { view: RequestView | null
 }
 
 export function ResponsePanel({ stacked = false }: { stacked?: boolean }) {
-  const { response, error, sending, serverPreview, refreshServerPreview } = useWorkspace();
+  const { response, error, sending, serverPreview, refreshServerPreview } = useApp();
   const [tab, setTab] = useState("body");
   // An error is only shown in the Body tab: make sure the user lands there instead of staring at another tab.
   useEffect(() => {

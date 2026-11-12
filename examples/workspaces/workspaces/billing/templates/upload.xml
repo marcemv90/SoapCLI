@@ -1,0 +1,13 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ord="http://example.com/orders">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ord:UploadInvoice>
+      <ord:OrderId>___ORDER_ID:1001___</ord:OrderId>
+      <!-- payloadId is an attribute: it is not an attachment. The text of <ord:Data> is: cid:invoice-1001 is replaced by
+           the Base64 of the file (or sent as a MIME part, with MTOM). -->
+      <ord:Document payloadId="cid:invoice" contentType="application/pdf">
+        <ord:Data>cid:invoice-1001</ord:Data>
+      </ord:Document>
+    </ord:UploadInvoice>
+  </soapenv:Body>
+</soapenv:Envelope>

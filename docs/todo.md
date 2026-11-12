@@ -16,6 +16,9 @@ Done in 2.1.0: see [Web UI](web-ui.md) and [Docker](docker.md).
 - [x] Safety for shared deployments: login, allow-list of destinations (checked on redirects), size and timeout limits,
       access log without secrets
 - [x] Multi-architecture image (`linux/amd64` and `linux/arm64`)
+- [x] Workspaces: folders on the server with their own profiles, placeholder options, attachments and shared saved requests
+      (see [Workspaces](workspaces.md))
+- [ ] Who may open which workspace (today the login of the server is one for everybody), and per-user logins
 - [ ] Keep attachments in the library (today they live in memory and are never stored)
 - [ ] TLS and per-user logins in the server itself (today: a reverse proxy and one shared login)
 - [ ] Edit server profiles from the UI

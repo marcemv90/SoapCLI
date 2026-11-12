@@ -1,0 +1,12 @@
+{
+  // The shipping workspace is read-only (see workspace.json): it can be used, but not changed from the UI.
+  "profiles": {
+    "tracking": {
+      "endpoint": "http://mock:8081/soap",
+      "soapVersion": "1.1",
+      "soapAction": "urn:Track",
+      "headers": { "X-Client": "soapcli-workspaces-example", "X-Workspace": "shipping" },
+      "args": { "PARCEL": "NL1234567890" }
+    }
+  }
+}

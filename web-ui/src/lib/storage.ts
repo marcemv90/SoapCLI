@@ -33,7 +33,20 @@ export const KEYS = {
   saved: "soapcli.saved",
   settings: "soapcli.settings",
   theme: "soapcli.theme",
+  /** The workspace that was open last. */
+  workspace: "soapcli.workspace",
 } as const;
+
+/**
+ * Where the request being edited and the history are kept. Each workspace has its own, because a request names profiles and
+ * attachments that exist only in its workspace. Without a workspace (a server that has none) the keys are those of before
+ * there were any, so nothing stored earlier is lost.
+ */
+export function scopedKeys(workspace: string | null): { draft: string; history: string } {
+  return workspace === null
+    ? { draft: KEYS.draft, history: KEYS.history }
+    : { draft: `${KEYS.draft}@${workspace}`, history: `${KEYS.history}@${workspace}` };
+}
 
 /** An attachment as stored: only the path on the server. A file chosen on this computer is never stored. */
 export interface StoredAttachment {

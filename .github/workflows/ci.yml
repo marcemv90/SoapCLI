@@ -140,6 +140,28 @@ jobs:
           curl -fsS -u alice:secret -o /dev/null http://127.0.0.1:18080/
           docker rm -f ui
 
+      # Workspaces: the image has an empty /workspaces for the unprivileged user; the UI creates a workspace in a mounted folder,
+      # a profile is saved into it, and the command line client of the same image reads that workspace.
+      - name: Web UI with workspaces, and the command line client in the same workspace
+        run: |
+          mkdir ws && chmod a+rwx ws
+          docker run -d --name ui -p 18080:8080 -e SOAPCLI_WORKSPACES_DIR=/workspaces -e SOAPCLI_ALLOW_CONFIG_EDIT=true \
+            -v "$PWD/ws:/workspaces" soapcli:ci
+          for i in $(seq 1 40); do curl -fsS http://127.0.0.1:18080/healthz && break; sleep 1; done
+          json() { curl -fsS -X POST -H 'Content-Type: application/json' "$@"; }
+          curl -fsS http://127.0.0.1:18080/api/workspaces | jq -e '.enabled and .manageable and (.workspaces | length) == 0'
+          json -d '{"name":"team","description":"made by the CI"}' http://127.0.0.1:18080/api/workspaces/create | jq -e '.name == "team"'
+          test -d ws/team/attachments && test -d ws/team/requests && test -f ws/team/workspace.json
+          json -d '{"name":"p","revision":"missing","create":true,"definition":{"endpoint":"http://example.invalid/soap"}}' \
+            http://127.0.0.1:18080/api/workspaces/team/profiles/save | jq -e '.revision != null'
+          json -d '{"name":"Saved","draft":{"body":"<a/>"}}' http://127.0.0.1:18080/api/workspaces/team/requests/save | jq -e '.id != null'
+          test "$(ls ws/team/requests | wc -l)" = "1"
+          docker run --rm -e SOAPCLI_WORKSPACES_DIR=/workspaces -v "$PWD/ws:/workspaces:ro" soapcli:ci --workspace team --list-profiles | grep -q -- "- p"
+          printf '<a/>' | docker run --rm -i -e SOAPCLI_WORKSPACES_DIR=/workspaces -v "$PWD/ws:/workspaces:ro" soapcli:ci \
+            --workspace team --profile p --dry-run | grep -q "SOAP-CLI DRY-RUN"
+          docker logs ui
+          docker rm -f ui
+
       - name: Does not run as root
         run: test "$(docker run --rm --entrypoint id soapcli:ci -u)" != "0"
 
@@ -247,3 +269,87 @@ jobs:
       - name: Stop the example
         if: always()
         run: docker compose -f examples/docker/docker-compose.yml down -v
+
+  # examples/workspaces is the same idea for workspaces: it starts the example with the image built from this checkout and uses it the
+  # way its README describes.
+  docker-workspaces-example:
+    name: Docker example (examples/workspaces)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build the image the example uses
+        run: docker build --build-arg VERSION=0.0.0-ci -t ghcr.io/marcemv90/soapcli:latest .
+
+      - name: The compose file is valid
+        run: docker compose -f examples/workspaces/docker-compose.yml config --quiet
+
+      # The container runs as uid 1000, and the checkout belongs to the runner's user: let it write to the workspaces.
+      - name: Start the example
+        run: |
+          chmod -R a+rwX examples/workspaces/workspaces
+          docker compose -f examples/workspaces/docker-compose.yml up -d
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/healthz
+
+      - name: Its workspaces, profiles, placeholder options and saved requests are all valid
+        run: |
+          base=http://127.0.0.1:8080
+          curl -fsS $base/api/workspaces | jq -e '(.workspaces | map(.name)) == ["billing","shipping"] and .manageable and all(.workspaces[]; .error == null)'
+          curl -fsS $base/api/workspaces/billing/profiles | jq -e '(.profiles | map(.name)) == ["base","demo","demo-upload","acceptance","production-mtls"] and all(.profiles[]; .error == null) and .editable'
+          curl -fsS $base/api/workspaces/billing/placeholders | jq -e '(.placeholders | map(.name)) == ["ENV","ORDER_ID","COUNTRY"] and all(.placeholders[]; .error == null) and .editable'
+          curl -fsS $base/api/workspaces/billing/requests | jq -e '(.requests | map(.name)) == ["Upload an invoice (demo)","Get order (demo)"] and all(.requests[]; .error == null) and .editable'
+          curl -fsS $base/api/workspaces/shipping/profiles | jq -e '(.profiles | map(.name)) == ["tracking"] and (.editable | not)'
+
+      - name: The profiles and the saved requests work against the mock service
+        run: |
+          base=http://127.0.0.1:8080
+          json() { curl -fsS -X POST -H 'Content-Type: application/json' "$@"; }
+          # the request file comes from the workspace's templates/ folder (a relative path starts in the workspace folder)
+          json -d '{"profile":"demo"}' $base/api/workspaces/billing/send | jq -e '.status == 200 and (.body | contains("EchoResponse") and contains("urn:GetOrder") and contains("1001") and contains("soapcli-workspaces-example"))'
+          json -d '{"profile":"demo-upload"}' $base/api/workspaces/billing/send | jq -e '.status == 200 and (.body | contains("[base64:") and contains("UploadInvoice"))'
+          # a saved request, sent the way the page sends it: its body, and the attachment named by path, from the attachments/ of the workspace
+          curl -fsS $base/api/workspaces/billing/requests/upload-invoice-demo \
+            | jq '{profile: .draft.profile, body: .draft.body, attachments: .draft.attachments}' \
+            | json -d @- $base/api/workspaces/billing/send | jq -e '.status == 200 and (.body | contains("[base64:"))'
+          curl -fsS $base/api/workspaces/shipping/requests/track-parcel \
+            | jq '{profile: .draft.profile, body: .draft.body, args: .draft.args}' \
+            | json -d @- $base/api/workspaces/shipping/send | jq -e '.status == 200 and (.body | contains("shipping") and contains("NL1234567890"))'
+          # the secrets of the workspace (secrets.env) feed its profiles: the profile resolves, and its credentials stay masked
+          json -d '{"profile":"acceptance","body":"<a/>"}' $base/api/workspaces/billing/preview | jq -e '.headers | any(.name == "Authorization" and .value == "Basic ****")'
+
+      - name: A request can be saved into a workspace, a read-only one refuses, and a workspace can be created
+        run: |
+          base=http://127.0.0.1:8080
+          ws=examples/workspaces/workspaces
+          json() { curl -fsS -X POST -H 'Content-Type: application/json' "$@"; }
+          id=$(json -d '{"name":"From CI","folder":"CI","draft":{"body":"<a/>","endpoint":"http://mock:8081/soap"}}' $base/api/workspaces/billing/requests/save | jq -r .id)
+          test -f $ws/billing/requests/$id.json
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"name":"x","draft":{"body":"<a/>"}}' $base/api/workspaces/shipping/requests/save)" = 403
+          json -d '{"name":"ci-team","description":"made by the CI"}' $base/api/workspaces/create | jq -e '.name == "ci-team"'
+          test -d $ws/ci-team/attachments && test -d $ws/ci-team/requests
+
+      - name: The UI can edit a profile of a workspace, and the comments of the file survive
+        run: |
+          base=http://127.0.0.1:8080
+          file=examples/workspaces/workspaces/billing/profiles.json
+          revision=$(curl -fsS $base/api/workspaces/billing/profiles | jq -r .revision)
+          curl -fsS $base/api/workspaces/billing/profiles/demo/definition \
+            | jq --arg revision "$revision" '{name: "demo", revision: $revision, create: false, definition: (.definition | .timeout = 30)}' \
+            | curl -fsS -X POST -H 'Content-Type: application/json' -d @- $base/api/workspaces/billing/profiles/save | jq -e '.revision != null'
+          grep -q '"timeout": 30' "$file"
+          grep -q 'What the others share' "$file"
+          grep -q 'A relative path starts in THIS folder' "$file"
+          curl -fsS $base/api/workspaces/billing/profiles | jq -e 'all(.profiles[]; .error == null)'
+
+      - name: Logs
+        if: always()
+        run: docker compose -f examples/workspaces/docker-compose.yml logs --no-color
+
+      - name: Stop the example
+        if: always()
+        run: docker compose -f examples/workspaces/docker-compose.yml down -v

@@ -33,16 +33,17 @@ rebuild or used another `npm ci`.
 
 ```text
 src/
-  main.tsx, App.tsx          entry, hash routing (#/request, #/library, #/profiles, #/placeholders, #/settings)
-  pages/                     RequestPage, LibraryPage, ProfilesPage, PlaceholdersPage, SettingsPage
+  main.tsx, App.tsx          entry
+  pages/                     RequestPage, LibraryPage, ProfilesPage, PlaceholdersPage, WorkspacesPage, SettingsPage
   components/
-    layout/AppShell.tsx      sidebar, header, theme toggle
+    layout/AppShell.tsx      sidebar (with the workspace switcher), header, theme toggle
     request/                 EndpointBar, body (editor, variables, attachments), tabs (headers, auth, options), ResponsePanel,
                              AttachmentLoadDialog
     profiles/                ProfileForm and its form controls (fields, secrets, name/value tables)
     common/                  CodeEditor (CodeMirror), small controls
     ui/                      TailAdmin components
-  state/                     workspace (draft, response, history, saved, settings, server info), theme
+  state/                     app (the open workspace, draft, response, history, saved requests, the workspace's library,
+                             settings, server info), theme. A "workspace" is the server's folder of that name, never this state
   lib/                       helpers and the API client, in TypeScript
     xml.ts, placeholders.ts, soap.ts, cid.ts      small ports of the Java core (scanner, variable listing, version badge,
                              `cid:` references of the attachments list)
@@ -50,9 +51,11 @@ src/
     load-attachments.ts      loads the files named by path, one by one, before sending (drives the progress dialog)
     profile-form.ts          the model of the profile form: a profile as the JSON it is, edited by path; secrets are `****`
     placeholder-options.ts   the rows of the placeholder options editor, pasted lists
-    transports/server.ts     /api/send, /api/preview, /api/format, /api/info, /api/profiles, /api/placeholders (and their edits)
+    route.ts                 the address of a page in the hash: #/request?w=billing&open=<saved request id>
+    transports/server.ts     /api/send, /api/preview, /api/format, /api/info, /api/profiles, /api/placeholders (and their edits),
+                             /api/workspaces and the library; calls that belong to a workspace go under /api/workspaces/{name}/
     command.ts               "Copy as" (SoapCLI, Docker, curl)
-    storage.ts               what is kept in localStorage (never secrets or attachment contents)
+    storage.ts               what is kept in localStorage (never secrets or attachment contents); the draft and the history per workspace
 test/                        Vitest suites
 public/                      favicon and theme-init.js (sets the theme before the first paint)
 ```

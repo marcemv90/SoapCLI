@@ -1,0 +1,5 @@
+# Keystores and the like never belong in version control
+workspaces/*/certs/*
+!workspaces/*/certs/README.md
+# Keep the real secrets of your workspaces out of it too (the ones in this example are placeholders)
+# workspaces/*/secrets.env

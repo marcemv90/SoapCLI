@@ -4,10 +4,45 @@
 
 ### Added
 
+- **[Workspaces](workspaces.md)**, to keep things on the server and share them with a team. `serve --workspaces-dir <dir>`
+  (`SOAPCLI_WORKSPACES_DIR`) turns every folder inside `<dir>` into a workspace with its own `profiles.json`,
+  `placeholders.json`, `attachments/` folder and saved requests (`requests/`), plus an optional `workspace.json`
+  (`description`, `readOnly`, `allowedHosts`) and `secrets.env` (the `${NAME}` its profiles use). A relative path in a profile
+  starts in the workspace folder, so a workspace is self-contained. Folders added by hand show up without a restart.
+  In the UI: a workspace switcher, a **Workspaces** page to create, open and remove them (removing renames the folder to
+  `.removed-<name>-<date>`: nothing is deleted, and a `readOnly` workspace cannot be removed), and addresses that name the
+  workspace (`#/request?w=billing`). `--workspaces-dir` replaces `--profile-file`, `--placeholders-file` and
+  `--attachments-dir`, which are refused next to it on the command line. New API: `/api/workspaces` and everything of a
+  workspace under `/api/workspaces/{name}/` (the same endpoints as `/api/`, which keep working on a server without workspaces).
+- **A shared library of saved requests.** In a workspace, *Save* can keep a request on the server (one JSON file in
+  `requests/`, with an optional *folder* to group them) instead of in the browser: everyone who opens the workspace sees it.
+  Opening one remembers its version, and saving over it, or removing it, is refused if someone changed it meanwhile (*Save as
+  a new request* is offered). The Library has a link button that copies an address which opens that request in that workspace
+  for whoever follows it. Credentials are not stored: not the password or token of the *Auth* tab, nor the value of a header
+  or variable whose name looks like one (the save says what it left out). Requests saved in the browser before stay under
+  *This browser*, and can be moved to the workspace. The history and the request being edited are kept per workspace.
+  New API: `GET /api/workspaces/{name}/requests` (and `/{id}`), `POST .../requests/save` and `.../requests/delete`.
+- **`--workspace <name>` and `--workspaces-dir <dir>` for the command line client**: the profiles file, the secrets and the
+  relative paths of the profiles are the workspace's, so scripts and the web UI share them. *Copy as…* writes this command
+  for a request of a workspace.
+- The Docker image has an empty `/workspaces` folder, owned by the unprivileged user; workspaces are not turned on by
+  default (`-e SOAPCLI_WORKSPACES_DIR=/workspaces -v "$PWD/workspaces:/workspaces"`). A commented option in `compose.yaml`,
+  and [`examples/workspaces`](https://github.com/marcemv90/SoapCLI/tree/main/examples/workspaces), a complete setup to copy.
+
 - **[`examples/docker`](https://github.com/marcemv90/SoapCLI/tree/main/examples/docker)**, a complete Docker setup to copy and edit: a `docker-compose.yml` with the profiles,
   placeholder options, request files, attachments and certificates folder it expects, and a small mock service so that
   everything can be tried before pointing it at a real one. A job of the CI builds the image and runs the example end to
   end, so it does not drift from the code.
+
+### Notes
+
+- Nothing changes for a server started without `--workspaces-dir`: the same files, the same API addresses, and the
+  browser keeps its saved requests, history and draft under the same keys.
+- Who can do what in a workspace: saving and removing requests only needs a writable folder, a workspace that is not
+  `readOnly`, and a server that was not started with `--no-config-edit`; **it does not need `--allow-config-edit`**, because
+  sharing requests is what workspaces are for. Editing profiles and placeholder options, and creating and removing
+  workspaces, follow the rule that was already there (on by default only when the server listens on this machine).
+- The interface's internal state module is now `state/app.tsx` (`useApp`), so that "workspace" only means the new thing.
 
 ## 2.2.0
 
