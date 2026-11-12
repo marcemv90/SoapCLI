@@ -8,9 +8,13 @@ import com.sun.net.httpserver.HttpServer;
 import io.github.marcemv90.soapcli.core.ConfigException;
 import io.github.marcemv90.soapcli.core.HostNotAllowedException;
 import io.github.marcemv90.soapcli.core.TransportException;
+import io.github.marcemv90.soapcli.web.ApiModel.AttachmentCheckRequest;
+import io.github.marcemv90.soapcli.web.ApiModel.DeleteRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.ErrorResponse;
 import io.github.marcemv90.soapcli.web.ApiModel.FormatRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.FormatResponse;
+import io.github.marcemv90.soapcli.web.ApiModel.SavePlaceholderRequest;
+import io.github.marcemv90.soapcli.web.ApiModel.SaveProfileRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.SendError;
 import io.github.marcemv90.soapcli.web.ApiModel.SendRequest;
 import java.io.IOException;
@@ -66,12 +70,13 @@ public final class WebServer implements AutoCloseable {
         CONTENT_TYPES.put("txt", "text/plain; charset=utf-8");
     }
     /**
-     * The page must be able to call any http(s) URL (that is the point of a browser client), so connect-src is open;
-     * scripts, in contrast, may only come from this server, which is what keeps injected content from running.
-     * Styles allow inline because the editor and the pop-ups set theirs at run time.
+     * The page only ever talks to this server (the calls to the services are made by the server, not by the browser),
+     * so connect-src is 'self'; scripts may only come from this server either, which is what keeps injected content from
+     * running or from sending anything elsewhere. Styles allow inline because the editor and the pop-ups set theirs at
+     * run time.
      */
     private static final String CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-            + "img-src 'self' data: blob:; font-src 'self'; connect-src http: https:; base-uri 'none'; "
+            + "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; base-uri 'none'; "
             + "form-action 'none'; frame-ancestors 'none'";
 
     /** One HTTP answer, built by a route and written by {@link #write}. */
@@ -204,6 +209,36 @@ public final class WebServer implements AutoCloseable {
                     return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.info());
                 case "/api/profiles":
                     return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.profiles());
+                case "/api/placeholders":
+                    return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.placeholders());
+                case "/api/profiles/save": {
+                    Response bad = requireJsonPost(ex, method);
+                    if (bad != null) {
+                        return bad;
+                    }
+                    return jsonResponse(200, api.saveProfile(readJson(ex, SaveProfileRequest.class)));
+                }
+                case "/api/profiles/delete": {
+                    Response bad = requireJsonPost(ex, method);
+                    if (bad != null) {
+                        return bad;
+                    }
+                    return jsonResponse(200, api.deleteProfile(readJson(ex, DeleteRequest.class)));
+                }
+                case "/api/placeholders/save": {
+                    Response bad = requireJsonPost(ex, method);
+                    if (bad != null) {
+                        return bad;
+                    }
+                    return jsonResponse(200, api.savePlaceholder(readJson(ex, SavePlaceholderRequest.class)));
+                }
+                case "/api/placeholders/delete": {
+                    Response bad = requireJsonPost(ex, method);
+                    if (bad != null) {
+                        return bad;
+                    }
+                    return jsonResponse(200, api.deletePlaceholder(readJson(ex, DeleteRequest.class)));
+                }
                 case "/api/send": {
                     Response bad = requireJsonPost(ex, method);
                     if (bad != null) {
@@ -220,6 +255,14 @@ public final class WebServer implements AutoCloseable {
                     SendRequest request = readJson(ex, SendRequest.class);
                     return jsonResponse(200, api.preview(request));
                 }
+                case "/api/attachments/check": {
+                    Response bad = requireJsonPost(ex, method);
+                    if (bad != null) {
+                        return bad;
+                    }
+                    AttachmentCheckRequest request = readJson(ex, AttachmentCheckRequest.class);
+                    return jsonResponse(200, api.checkAttachment(request.path));
+                }
                 case "/api/format": {
                     Response bad = requireJsonPost(ex, method);
                     if (bad != null) {
@@ -231,6 +274,15 @@ public final class WebServer implements AutoCloseable {
                     return jsonResponse(200, response);
                 }
                 default:
+                    if (path.startsWith("/api/profiles/") && path.endsWith("/definition")) {
+                        if (requireGet(method) != null) {
+                            return requireGet(method);
+                        }
+                        String name = URLDecoder.decode(
+                                path.substring("/api/profiles/".length(), path.length() - "/definition".length()),
+                                StandardCharsets.UTF_8);
+                        return jsonResponse(200, api.profileDefinition(name));
+                    }
                     if (path.startsWith("/api/profiles/") && path.endsWith("/request")) {
                         if (requireGet(method) != null) {
                             return requireGet(method);

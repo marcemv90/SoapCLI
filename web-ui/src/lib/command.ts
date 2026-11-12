@@ -1,5 +1,5 @@
-import type { BuiltRequest } from "./request";
-import type { RequestDraft } from "./types";
+import { activeAttachments } from "./attachments";
+import type { RequestDraft, RequestView } from "./types";
 
 /** Quotes for a POSIX shell. */
 export const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -20,8 +20,10 @@ export function toCliCommand(draft: RequestDraft, kind: CommandKind, image = "gh
   for (const [name, value] of Object.entries(draft.args)) args.push(`--arg ${shellQuote(`${name}=${value}`)}`);
   if (draft.auth.kind === "basic") args.push("--auth-basic-env SOAP_CREDENTIALS");
   if (draft.auth.kind === "bearer") args.push("--auth-bearer-env SOAP_TOKEN");
-  for (const a of draft.attachments) {
-    if (a.cid.trim()) args.push(`--attachment ${shellQuote(`${a.cid.trim()}=./${a.filename || a.cid.trim()}`)}`);
+  for (const a of activeAttachments(draft)) {
+    // A path is written as it is on the server; a file chosen here is assumed to sit next to request.xml.
+    const file = a.kind === "path" ? a.path.trim() : `./${a.filename || a.cid}`;
+    args.push(`--attachment ${shellQuote(`${a.cid}=${file}`)}`);
   }
   if (draft.mtom) args.push("--mtom");
   if (draft.options.timeoutSeconds > 0) args.push(`--timeout ${draft.options.timeoutSeconds}`);
@@ -38,13 +40,20 @@ export function toCliCommand(draft: RequestDraft, kind: CommandKind, image = "gh
   return lines.join("\n");
 }
 
-/** A curl command that sends the same bytes. Not offered for MTOM: curl cannot rebuild the multipart message. */
-export function toCurl(draft: RequestDraft, built: BuiltRequest): string | null {
-  if (built.mtom) return null;
-  const parts = [`curl -sS -X POST ${shellQuote(built.url)}`];
-  for (const [name, value] of built.headers) {
-    if (name.toLowerCase() === "authorization") continue; // replaced below by the environment variable
-    parts.push(`-H ${shellQuote(`${name}: ${value}`)}`);
+/**
+ * A curl command that sends the same bytes, from the request as the server built it (`view`). Not offered for MTOM:
+ * curl cannot rebuild the multipart message. The server masks credentials, so the values of the headers typed in the
+ * form are taken from the form; whatever else is masked comes from a server profile and is left as `****` to be filled in.
+ */
+export function toCurl(draft: RequestDraft, view: Pick<RequestView, "url" | "headers" | "mtom">): string | null {
+  if (view.mtom) return null;
+  const own = new Map(draft.headers.filter((h) => h.enabled && h.name.trim()).map((h) => [h.name.trim().toLowerCase(), h.value]));
+  const credentialsFromForm = draft.auth.kind !== "none";
+  const parts = [`curl -sS -X POST ${shellQuote(view.url)}`];
+  for (const [name, value] of view.headers) {
+    const key = name.toLowerCase();
+    if (key === "authorization" && credentialsFromForm) continue; // replaced below by the environment variable
+    parts.push(`-H ${shellQuote(`${name}: ${own.get(key) ?? value}`)}`);
   }
   if (draft.auth.kind === "basic") parts.push(`-u "$SOAP_CREDENTIALS"`);
   if (draft.auth.kind === "bearer") parts.push(`-H "Authorization: Bearer $SOAP_TOKEN"`);
@@ -52,5 +61,6 @@ export function toCurl(draft: RequestDraft, built: BuiltRequest): string | null 
   if (draft.options.followRedirects) parts.push("-L");
   if (draft.options.timeoutSeconds > 0) parts.push(`--max-time ${draft.options.timeoutSeconds}`);
   parts.push("--data-binary @request.xml");
-  return parts.join(" \\\n  ");
+  const note = parts.some((p) => p.includes("****")) ? "# Values shown as **** come from the server profile: fill them in\n" : "";
+  return note + parts.join(" \\\n  ");
 }

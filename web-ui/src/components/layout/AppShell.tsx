@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CodeIcon, FolderIcon, GearIcon, MenuTwoIcon, MoonIcon, SunIcon, XIcon } from "@/icons";
+import { CodeIcon, FolderIcon, GearIcon, ListIcon, MenuTwoIcon, MoonIcon, SunIcon, TagIcon, XIcon } from "@/icons";
 import { useTheme } from "@/state/theme";
 import { useWorkspace, type Page } from "@/state/workspace";
 import { cn } from "@/utils";
@@ -9,10 +8,14 @@ import { cn } from "@/utils";
 const NAV: { page: Page; label: string; icon: ReactNode }[] = [
   { page: "request", label: "Request", icon: <CodeIcon /> },
   { page: "library", label: "Library", icon: <FolderIcon /> },
+  { page: "profiles", label: "Profiles", icon: <TagIcon /> },
+  { page: "placeholders", label: "Placeholders", icon: <ListIcon /> },
   { page: "settings", label: "Settings", icon: <GearIcon /> },
 ];
 
-const TITLES: Record<Page, string> = { request: "Request", library: "Library", settings: "Settings" };
+const TITLES: Record<Page, string> = {
+  request: "Request", library: "Library", profiles: "Profiles", placeholders: "Placeholders", settings: "Settings",
+};
 
 function Logo() {
   return (
@@ -22,28 +25,6 @@ function Logo() {
         <div className="text-xl font-semibold text-gray-800 dark:text-white/90">SoapCLI</div>
         <div className="text-xs text-gray-500 dark:text-gray-400">SOAP client</div>
       </div>
-    </div>
-  );
-}
-
-function ServerWidget() {
-  const { server, navigate } = useWorkspace();
-  return (
-    <div className="rounded-2xl bg-gray-50 px-4 py-5 dark:bg-white/3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-semibold text-gray-800 dark:text-white/90">SoapCLI server</span>
-        {!server.loaded ? null : server.info
-          ? <Badge variant="light" color="success" size="sm">connected</Badge>
-          : <Badge variant="light" color="gray" size="sm">not available</Badge>}
-      </div>
-      <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-        {server.info
-          ? `Version ${server.info.version}. Use it for client certificates, proxies and servers that block cross-origin calls.`
-          : "Calls are made straight from this browser. Run this page from a SoapCLI server to also send through it."}
-      </p>
-      <button type="button" onClick={() => navigate("settings")} className="text-xs font-medium text-brand-500 hover:underline dark:text-brand-400">
-        Details
-      </button>
     </div>
   );
 }
@@ -65,7 +46,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           <Logo />
           <Button variant="ghost" size="icon-sm" className="xl:hidden" onClick={onClose} aria-label="Close menu"><XIcon /></Button>
         </div>
-        <nav className="flex-1 overflow-y-auto">
+        <nav className="flex-1 overflow-y-auto pb-6">
           <h2 className="mb-4 px-3 text-xs leading-5 font-medium text-gray-400 uppercase">Menu</h2>
           <ul className="flex flex-col gap-1">
             {NAV.map((item) => {
@@ -86,7 +67,6 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             })}
           </ul>
         </nav>
-        <div className="pb-6"><ServerWidget /></div>
       </aside>
     </>
   );

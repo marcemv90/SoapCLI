@@ -1,4 +1,5 @@
-import { bytesToBase64 } from "../charset";
+import { activeAttachments } from "../attachments";
+import { bytesToBase64 } from "../format";
 import type { HeaderPair, RequestDraft, RequestView, ResponseView } from "../types";
 
 /** A failure of the SoapCLI server or of a call it made for us. */
@@ -19,6 +20,20 @@ export interface ServerInfo {
   maxBodyBytes: number;
   profilesFileFound: boolean;
   profilesFile?: string;
+  /** The only folder a request may attach files from, by path. */
+  attachmentsDir: string;
+  placeholdersFile: string;
+  /** Whether the server lets the UI change the profiles and placeholders files (they may still be read-only). */
+  configEditAllowed: boolean;
+}
+
+/** What the server found at an attachment path. */
+export interface AttachmentCheck {
+  path: string;
+  name: string;
+  size: number;
+  /** Where the file really is. */
+  resolved: string;
 }
 
 export interface ServerProfile {
@@ -32,7 +47,48 @@ export interface ServerProfiles {
   file: string;
   found: boolean;
   error?: string;
+  /** Identifies the content of the file: a change has to quote the one it was made from. */
+  revision: string;
+  editable: boolean;
+  readOnlyReason?: string;
   profiles: ServerProfile[];
+}
+
+/** A profile as it is in the file, not merged with what it extends, with secrets shown as `****`. */
+export interface ProfileDefinition {
+  name: string;
+  revision: string;
+  definition: Record<string, unknown>;
+  /** The profiles that inherit from this one. */
+  dependents: string[];
+}
+
+export interface SaveResult {
+  revision: string;
+  warnings: string[];
+}
+
+export interface PlaceholderOption {
+  value: string;
+  /** What the dropdown shows; the value itself when absent. */
+  label?: string;
+}
+
+export interface PlaceholderEntry {
+  name: string;
+  description?: string;
+  options: PlaceholderOption[];
+  error?: string;
+}
+
+export interface ServerPlaceholders {
+  file: string;
+  found: boolean;
+  error?: string;
+  revision: string;
+  editable: boolean;
+  readOnlyReason?: string;
+  placeholders: PlaceholderEntry[];
 }
 
 interface ApiNameValue {
@@ -110,6 +166,22 @@ export async function fetchServerInfo(): Promise<ServerInfo | null> {
 }
 
 export const fetchServerProfiles = () => api<ServerProfiles>("profiles");
+export const fetchPlaceholders = () => api<ServerPlaceholders>("placeholders");
+
+export const fetchProfileDefinition = (name: string) =>
+  api<ProfileDefinition>(`profiles/${encodeURIComponent(name)}/definition`);
+
+/** Creates a profile, or replaces its definition. A secret left as `****` keeps the saved value. */
+export const saveProfile = (body: { name: string; revision: string; create: boolean; definition: Record<string, unknown> }) =>
+  api<SaveResult>("profiles/save", { json: body });
+
+export const deleteProfile = (name: string, revision: string) => api<SaveResult>("profiles/delete", { json: { name, revision } });
+
+export const savePlaceholder = (body: { name: string; revision: string; create: boolean; description: string; options: PlaceholderOption[] }) =>
+  api<SaveResult>("placeholders/save", { json: body });
+
+export const deletePlaceholder = (name: string, revision: string) =>
+  api<SaveResult>("placeholders/delete", { json: { name, revision } });
 
 export async function fetchProfileRequest(name: string): Promise<string> {
   let response: Response;
@@ -122,7 +194,8 @@ export async function fetchProfileRequest(name: string): Promise<string> {
   return response.text();
 }
 
-/** The JSON the server expects for a draft. Secrets travel only to the server the page came from. */
+/** The JSON the server expects for a draft. Secrets travel only to the server the page came from. Only the files
+ * the body refers to with `cid:` are included: by path (the server reads them) or as Base64 (chosen on this computer). */
 export function toServerRequest(draft: RequestDraft): Record<string, unknown> {
   const headers: Record<string, string> = {};
   for (const h of draft.headers) if (h.enabled && h.name.trim()) headers[h.name.trim()] = h.value;
@@ -141,9 +214,9 @@ export function toServerRequest(draft: RequestDraft): Record<string, unknown> {
     followRedirects: draft.options.followRedirects,
     insecure: draft.options.insecure || undefined,
     mtom: draft.mtom,
-    attachments: draft.attachments
-      .filter((a) => a.cid.trim())
-      .map((a) => ({ cid: a.cid.trim(), filename: a.filename, contentBase64: bytesToBase64(a.data) })),
+    attachments: activeAttachments(draft).map((a) => a.kind === "path"
+      ? { cid: a.cid, path: a.path.trim() }
+      : { cid: a.cid, filename: a.filename, contentBase64: bytesToBase64(a.data) }),
   };
 }
 
@@ -165,7 +238,6 @@ function toRequestView(info: ApiRequestInfo): RequestView {
 export async function sendViaServer(draft: RequestDraft, signal?: AbortSignal): Promise<ResponseView> {
   const r = await api<ApiSendResponse>("send", { json: toServerRequest(draft), signal });
   return {
-    via: "server",
     status: r.status,
     statusText: r.statusMessage,
     elapsedMs: r.elapsedMillis,
@@ -178,7 +250,6 @@ export async function sendViaServer(draft: RequestDraft, signal?: AbortSignal): 
     binary: r.binary,
     bodyBase64: r.bodyBase64,
     redirectLocation: r.location,
-    notes: [],
     request: toRequestView(r.request),
   };
 }
@@ -186,6 +257,10 @@ export async function sendViaServer(draft: RequestDraft, signal?: AbortSignal): 
 export async function previewViaServer(draft: RequestDraft): Promise<RequestView> {
   return toRequestView(await api<ApiRequestInfo>("preview", { json: toServerRequest(draft) }));
 }
+
+/** Asks the server to open the file at `path` (inside its attachments folder) and say what it found. */
+export const checkAttachment = (path: string, signal?: AbortSignal) =>
+  api<AttachmentCheck>("attachments/check", { json: { path }, signal });
 
 export async function formatViaServer(xml: string): Promise<string> {
   return (await api<{ xml: string }>("format", { json: { xml } })).xml;

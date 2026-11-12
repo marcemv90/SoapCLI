@@ -60,8 +60,19 @@ public final class Profiles {
             throw new ConfigException("Profiles file '" + file + "' not found. Create it, pass another one with "
                     + "--profile-file, or set SOAPCLI_PROFILE_FILE");
         }
+        String text;
+        try {
+            text = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new ConfigException("Failed to read profiles file '" + file + "': " + e.getMessage(), e);
+        }
+        return parse(text, file);
+    }
+
+    /** Reads profiles from text that came from {@code file} (which is only used in messages). */
+    public static Profiles parse(String text, Path file) {
         JsonNode root;
-        try (JsonParser parser = MAPPER.createParser(Files.newBufferedReader(file))) {
+        try (JsonParser parser = MAPPER.createParser(new java.io.StringReader(text))) {
             root = MAPPER.readTree(parser);
         } catch (IOException e) {
             throw new ConfigException("Failed to read profiles file '" + file + "': " + e.getMessage(), e);
@@ -103,6 +114,106 @@ public final class Profiles {
         merged.remove("extends");
         merged.fields().forEachRemaining(e -> result.set(e.getKey(), e.getValue()));
         return mask(result);
+    }
+
+    /**
+     * What the profile itself says, for editing: not merged with what it extends, {@code ${...}} left as written, and
+     * secrets masked. {@code null} values (which remove an inherited setting) are kept.
+     */
+    public ObjectNode own(String name) {
+        return mask(ownNode(name).deepCopy());
+    }
+
+    /** The profile as it is in the file, secrets included, to put back what a masked value stands for. */
+    public ObjectNode ownUnmasked(String name) {
+        return ownNode(name).deepCopy();
+    }
+
+    public boolean has(String name) {
+        JsonNode node = profiles.get(name);
+        return node != null && !node.isNull();
+    }
+
+    /** The profiles that inherit from {@code name}, directly or through others. */
+    public List<String> dependents(String name) {
+        List<String> result = new ArrayList<>();
+        boolean grew = true;
+        List<String> known = new ArrayList<>();
+        known.add(name);
+        while (grew) {
+            grew = false;
+            for (String candidate : names()) {
+                if (known.contains(candidate)) {
+                    continue;
+                }
+                JsonNode node = profiles.get(candidate);
+                JsonNode parent = node != null && node.isObject() ? node.get("extends") : null;
+                if (parent != null && parent.isTextual() && known.contains(parent.asText())) {
+                    known.add(candidate);
+                    result.add(candidate);
+                    grew = true;
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Checks a profile the way using it would: it must merge with what it extends and every value must have the right
+     * type. A {@code ${VAR}} that is not set on this machine cannot be expanded, so the types are not checked then.
+     *
+     * @return what is worth telling the author (ignored settings, a check that could not be made)
+     * @throws ConfigException if the profile cannot be used
+     */
+    public List<String> validate(String name, Map<String, String> env) {
+        List<String> notes = new ArrayList<>();
+        ObjectNode merged = merged(name, new ArrayList<>());
+        merged.remove("extends");
+        JsonNode expanded;
+        try {
+            expanded = interpolate(merged, "", name, env);
+        } catch (MissingEnvironmentException e) {
+            notes.add(e.getMessage() + ". The types of this profile's values could not be checked here");
+            return notes;
+        }
+        notes.addAll(Profile.from(name, expanded).warnings);
+        return notes;
+    }
+
+    /**
+     * Puts back the secrets a masked copy stood for: a secret whose value is {@link SecretMasker#MASK} in
+     * {@code submitted} keeps what {@code existing} has. Any other value is taken as written, so typing a new secret
+     * replaces the old one.
+     *
+     * @param existing the profile as it is in the file, or {@code null} for a new one
+     * @throws ConfigException if a value is masked but there is nothing saved to keep
+     */
+    public static ObjectNode restoreSecrets(ObjectNode submitted, ObjectNode existing) {
+        return restoreSecrets(submitted, existing, "");
+    }
+
+    private static ObjectNode restoreSecrets(ObjectNode submitted, ObjectNode existing, String path) {
+        ObjectNode result = MAPPER.createObjectNode();
+        Iterator<Map.Entry<String, JsonNode>> it = submitted.fields();
+        while (it.hasNext()) {
+            Map.Entry<String, JsonNode> e = it.next();
+            String key = e.getKey();
+            JsonNode value = e.getValue();
+            JsonNode old = existing == null ? null : existing.get(key);
+            String where = path.isEmpty() ? key : path + "." + key;
+            if (value.isObject()) {
+                result.set(key, restoreSecrets((ObjectNode) value, old != null && old.isObject() ? (ObjectNode) old : null, where));
+            } else if (value.isTextual() && SecretMasker.MASK.equals(value.asText()) && SecretMasker.isSecretName(key)) {
+                if (old == null || !old.isValueNode() || old.isNull()) {
+                    throw new ConfigException("'" + where + "' is hidden (" + SecretMasker.MASK + ") but there is no saved value to keep: "
+                            + "type the value");
+                }
+                result.set(key, old);
+            } else {
+                result.set(key, value);
+            }
+        }
+        return result;
     }
 
     /** Human readable rendering of {@link #describe(String)} output, indented by {@code indent} spaces. */
@@ -218,7 +329,7 @@ public final class Profiles {
                 value = m.group(2);
             }
             if (value == null) {
-                throw new ConfigException("Profile '" + profile + "': the environment variable '" + m.group(1)
+                throw new MissingEnvironmentException("Profile '" + profile + "': the environment variable '" + m.group(1)
                         + "' is not set (used in '" + path + "'). Set it, or write ${" + m.group(1)
                         + ":-default} to provide a fallback");
             }
@@ -244,6 +355,15 @@ public final class Profiles {
             }
         });
         return copy;
+    }
+
+    /** A {@code ${VAR}} in a profile names a variable that is not set (and has no {@code :-default}). */
+    public static final class MissingEnvironmentException extends ConfigException {
+        private static final long serialVersionUID = 1L;
+
+        MissingEnvironmentException(String message) {
+            super(message);
+        }
     }
 
     /** Pretty JSON of {@link #describe(String)}. */

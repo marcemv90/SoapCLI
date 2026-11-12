@@ -1,4 +1,5 @@
-/** `___NAME:default___` markers in the request text, the same syntax as the command line tool. */
+/** `___NAME:default___` markers in the request text, the same syntax as the command line tool.
+ * The server replaces them; the UI only lists them so that their values can be filled in. */
 
 const NAME = "[A-Za-z_][A-Za-z0-9_.\\-]*";
 
@@ -19,20 +20,4 @@ export function findPlaceholders(text: string): PlaceholderInfo[] {
     if (!seen.has(m[1])) seen.set(m[1], { name: m[1], defaultValue: m[2] });
   }
   return [...seen.values()];
-}
-
-/** Replaces each placeholder with its value if one is given, else with its default. */
-export function applyPlaceholders(
-  text: string,
-  values: Record<string, string>,
-): { text: string; used: Set<string> } {
-  const used = new Set<string>();
-  const result = text.replace(pattern(), (_all, name: string, def: string) => {
-    if (Object.hasOwn(values, name)) {
-      used.add(name);
-      return values[name];
-    }
-    return def;
-  });
-  return { text: result, used };
 }

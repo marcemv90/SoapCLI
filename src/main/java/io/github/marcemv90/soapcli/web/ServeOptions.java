@@ -21,6 +21,20 @@ public final class ServeOptions {
     public String uiPassword;
     public final List<String> allowedHosts = new ArrayList<>();
     public Path profileFile;
+    /** The file with the options offered for the placeholders of a request; see {@code PlaceholderOptions}. */
+    public Path placeholdersFile;
+    /**
+     * Whether the UI may change the profiles and placeholders files: {@code true} / {@code false} when chosen, or
+     * {@code null} for the default, which is "yes, but only when the server listens on this machine only".
+     */
+    public Boolean allowConfigEdit;
+    /**
+     * The only folder the UI may read attachments from when a request names a file by path. Defaults to the working
+     * directory (in the Docker image, {@code /work}).
+     */
+    public Path attachmentsDir;
+    /** Whether {@link #attachmentsDir} was chosen, as opposed to being the working directory by default. */
+    public boolean attachmentsDirExplicit;
     public long maxBodyBytes = 25L * 1024 * 1024;
     public long maxResponseBytes = 20L * 1024 * 1024;
     public boolean noInsecureTls;
@@ -32,6 +46,34 @@ public final class ServeOptions {
 
     public boolean hasAuth() {
         return uiUser != null && uiPassword != null;
+    }
+
+    /** Whether the UI may change the profiles and placeholders files. */
+    public boolean configEditAllowed() {
+        return allowConfigEdit != null ? allowConfigEdit : isLoopbackOnly();
+    }
+
+    /** Why the UI may not change the configuration files, or {@code null} if it may. */
+    public String configEditOffReason() {
+        if (configEditAllowed()) {
+            return null;
+        }
+        return allowConfigEdit != null
+                ? "Editing from the UI was switched off on this server (--no-config-edit)."
+                : "Editing from the UI is off because this server listens on a network address. "
+                + "To turn it on, start it with --allow-config-edit (and set a login).";
+    }
+
+    /** {@code SOAPCLI_PLACEHOLDERS_FILE}, else {@code ~/.config/soap-cli-placeholders.json}. */
+    public static Path defaultPlaceholdersFile(Map<String, String> env, String userHome) {
+        String fromEnv = env.get("SOAPCLI_PLACEHOLDERS_FILE");
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return Paths.get(fromEnv.trim());
+        }
+        if (userHome != null && !userHome.isEmpty()) {
+            return Paths.get(userHome, ".config", "soap-cli-placeholders.json");
+        }
+        return Paths.get("soap-cli-placeholders.json");
     }
 
     public boolean isLoopbackOnly() {
@@ -68,6 +110,15 @@ public final class ServeOptions {
         }
         o.noInsecureTls = isTrue(env.get("SOAPCLI_NO_INSECURE_TLS"));
         o.profileFile = Profiles.defaultFile(env, userHome);
+        o.placeholdersFile = defaultPlaceholdersFile(env, userHome);
+        if (notBlank(env.get("SOAPCLI_ALLOW_CONFIG_EDIT"))) {
+            o.allowConfigEdit = isTrue(env.get("SOAPCLI_ALLOW_CONFIG_EDIT"));
+        }
+        o.attachmentsDir = Paths.get("").toAbsolutePath().normalize();
+        if (notBlank(env.get("SOAPCLI_ATTACHMENTS_DIR"))) {
+            o.attachmentsDir = Paths.get(env.get("SOAPCLI_ATTACHMENTS_DIR").trim()).toAbsolutePath().normalize();
+            o.attachmentsDirExplicit = true;
+        }
 
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -81,6 +132,16 @@ public final class ServeOptions {
                 case "-h":
                 case "--help":
                     o.help = true;
+                    break;
+                case "--allow-config-edit":
+                    o.allowConfigEdit = Boolean.TRUE;
+                    break;
+                case "--no-config-edit":
+                    o.allowConfigEdit = Boolean.FALSE;
+                    break;
+                case "--placeholders-file":
+                    o.placeholdersFile = Paths.get(nonEmpty(value(args, i, inline, arg), arg));
+                    i += inline == null ? 1 : 0;
                     break;
                 case "--no-insecure-tls":
                     o.noInsecureTls = true;
@@ -117,6 +178,11 @@ public final class ServeOptions {
                     break;
                 case "--profile-file":
                     o.profileFile = Paths.get(nonEmpty(value(args, i, inline, arg), arg));
+                    i += inline == null ? 1 : 0;
+                    break;
+                case "--attachments-dir":
+                    o.attachmentsDir = Paths.get(nonEmpty(value(args, i, inline, arg), arg)).toAbsolutePath().normalize();
+                    o.attachmentsDirExplicit = true;
                     i += inline == null ? 1 : 0;
                     break;
                 case "--max-body-mb":
@@ -196,6 +262,11 @@ public final class ServeOptions {
                 + "  --host <addr>             Address to listen on (default 127.0.0.1)  [SOAPCLI_HOST]\n"
                 + "  --port <n>                Port (default 8080)  [SOAPCLI_PORT]\n"
                 + "  --profile-file <path>     Profiles file shown in the UI  [SOAPCLI_PROFILE_FILE]\n"
+                + "  --placeholders-file <path>  Options offered for the placeholders of a request  [SOAPCLI_PLACEHOLDERS_FILE]\n"
+                + "  --allow-config-edit       Let the UI change the profiles and placeholders files (the default only when the\n"
+                + "                            server listens on this machine; --no-config-edit forbids it)  [SOAPCLI_ALLOW_CONFIG_EDIT]\n"
+                + "  --attachments-dir <dir>   Folder the UI may read attachments from, by path; nothing outside it can be\n"
+                + "                            attached (default: the working directory)  [SOAPCLI_ATTACHMENTS_DIR]\n"
                 + "\n"
                 + "Access control (strongly recommended when listening on a network address):\n"
                 + "  --ui-user <name>          Require this user (HTTP Basic)  [SOAPCLI_UI_USER]\n"
@@ -206,7 +277,8 @@ public final class ServeOptions {
                 + "  --no-insecure-tls         Do not offer the 'skip certificate checks' option  [SOAPCLI_NO_INSECURE_TLS=true]\n"
                 + "\n"
                 + "Limits:\n"
-                + "  --max-body-mb <n>         Largest request accepted from the browser (default 25)  [SOAPCLI_MAX_BODY_MB]\n"
+                + "  --max-body-mb <n>         Largest request accepted from the browser, and most that the files attached\n"
+                + "                            by path may add up to (default 25)  [SOAPCLI_MAX_BODY_MB]\n"
                 + "  --max-response-mb <n>     Largest response returned to the browser (default 20)  [SOAPCLI_MAX_RESPONSE_MB]\n"
                 + "\n"
                 + "  -h, --help                Show this help\n"

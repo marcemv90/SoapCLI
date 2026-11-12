@@ -35,11 +35,31 @@ public final class ApiModel {
         public List<AttachmentUpload> attachments = new ArrayList<>();
     }
 
+    /** A file for a {@code cid:}: its bytes ({@code contentBase64}) or, instead, a {@code path} on this server. */
     public static class AttachmentUpload {
         public String cid;
         /** Informational only: it is never used to build a path. */
         public String filename;
         public String contentBase64;
+        /**
+         * A file on the server, absolute or relative to the attachments folder ({@code --attachments-dir}). Only files
+         * inside that folder are accepted.
+         */
+        public String path;
+    }
+
+    public static class AttachmentCheckRequest {
+        public String path;
+    }
+
+    /** What the server found at an attachment path. */
+    public static class AttachmentCheckResponse {
+        /** The path as the browser wrote it. */
+        public String path;
+        public String name;
+        public long size;
+        /** Where it really is, after resolving a relative path and symbolic links. */
+        public String resolved;
     }
 
     public static class NameValue {
@@ -121,6 +141,11 @@ public final class ApiModel {
         public long maxBodyBytes;
         public boolean profilesFileFound;
         public String profilesFile;
+        /** The folder attachments may be read from by path. */
+        public String attachmentsDir;
+        public String placeholdersFile;
+        /** Whether the server lets the UI change the profiles and placeholders files (they may still be read-only). */
+        public boolean configEditAllowed;
     }
 
     public static class ProfileInfo {
@@ -135,7 +160,83 @@ public final class ApiModel {
         public String file;
         public boolean found;
         public String error;
+        /** Identifies the content of the file; an edit has to quote it. */
+        public String revision;
+        public boolean editable;
+        /** Why {@link #editable} is false. */
+        public String readOnlyReason;
         public List<ProfileInfo> profiles = new ArrayList<>();
+    }
+
+    /** A profile as it is in the file, for editing: not merged with what it extends, secrets masked. */
+    public static class ProfileDefinition {
+        public String name;
+        public String revision;
+        public JsonNode definition;
+        /** The profiles that inherit from this one. */
+        public List<String> dependents = new ArrayList<>();
+    }
+
+    /** Creates a profile, or replaces its definition. A secret left as {@code ****} keeps the saved value. */
+    public static class SaveProfileRequest {
+        public String name;
+        /** The revision of the file the form was made from. */
+        public String revision;
+        /** {@code true} for a new profile: it is refused if the name exists. */
+        public boolean create;
+        public JsonNode definition;
+    }
+
+    public static class DeleteRequest {
+        public String name;
+        public String revision;
+    }
+
+    public static class SaveResponse {
+        /** The revision of the file after the change. */
+        public String revision;
+        /** Things worth telling the author: ignored settings, checks that could not be made. */
+        public List<String> warnings = new ArrayList<>();
+    }
+
+    public static class PlaceholderOption {
+        public String value;
+        /** What the dropdown shows; the value itself when absent. */
+        public String label;
+
+        public PlaceholderOption() {
+        }
+
+        public PlaceholderOption(String value, String label) {
+            this.value = value;
+            this.label = label;
+        }
+    }
+
+    public static class PlaceholderInfo {
+        public String name;
+        public String description;
+        public List<PlaceholderOption> options = new ArrayList<>();
+        /** Why this entry cannot be used, if it cannot. */
+        public String error;
+    }
+
+    public static class PlaceholdersResponse {
+        public String file;
+        public boolean found;
+        public String error;
+        public String revision;
+        public boolean editable;
+        public String readOnlyReason;
+        public List<PlaceholderInfo> placeholders = new ArrayList<>();
+    }
+
+    public static class SavePlaceholderRequest {
+        public String name;
+        public String revision;
+        public boolean create;
+        public String description;
+        public List<PlaceholderOption> options = new ArrayList<>();
     }
 
     public static class SendError extends RuntimeException {

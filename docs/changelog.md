@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+### Changed
+
+- **The web UI always sends through the SoapCLI server.** The *This browser* / *SoapCLI server* choice is gone: calling
+  from the browser added nothing that the server cannot do, it needed the service to allow CORS, and it forced the UI to
+  carry a second copy of the request builder. The server's client certificates, proxies and profiles are now always
+  available, and there is no CORS to diagnose. A page opened without a SoapCLI server (a copy of the files) now says so and
+  cannot send. The *Settings* option "Make calls from" is removed, and old saved drafts that mention it still load.
+- **Variables and attachments are on the Body screen**, under the editor, instead of in tabs of their own. Attachments are
+  detected from the request: every `cid:NAME` written as the **text** of an element is listed and you choose its file
+  (button or drag and drop). A `cid:` inside an **attribute** is not an attachment, so in
+  `<payload payloadId="cid:message"><value>cid:1234</value></payload>` only `1234` is listed. A file whose `cid:` is no
+  longer in the body is kept in memory but not sent.
+- The sidebar no longer shows the "SoapCLI server" box; the details are in *Settings* (and a notice appears on the request
+  page only if the server cannot be reached).
+- The *Sample* button of the editor is removed.
+- The server's `Content-Security-Policy` is now `connect-src 'self'`: the page only talks to its own server.
+- *Copy as → curl* is built from the request as the server builds it (so it also works with profiles); headers that come
+  from a profile are left as `****` to be filled in.
+
+### Added
+
+- **Edit profiles from the web UI.** The *Profiles* page can create, edit and delete profiles, with a form for every
+  setting. It edits what the profile itself says (what it inherits shows as *inherited: …* in the empty fields, and an
+  inherited proxy or certificate can be switched off for the profile), keeps the settings the form does not know, and never
+  sees a secret: a saved one shows as *saved* and is kept unless a new value is typed. Only the edited profile is rewritten:
+  the rest of the file, its formatting and its comments stay byte for byte (the file is replaced atomically and keeps its
+  permissions and symbolic link). A save quotes the revision of the file it was made from, so a change made meanwhile is
+  never overwritten; a profile that would not work, or that would break one that extends it, is refused. **Who can edit:**
+  on by default only when the server listens on this machine; on a network address (Docker included) it needs the new
+  `--allow-config-edit` (`SOAPCLI_ALLOW_CONFIG_EDIT=true`), and `--no-config-edit` switches it off. The file must be
+  writable (with Docker, mount `/config` without `:ro`). See [Editing profiles](web-ui.md#editing-profiles).
+- **Dropdowns for placeholders.** A placeholder can have **options**, kept in a file of its own
+  (`~/.config/soap-cli-placeholders.json`; `--placeholders-file`, `SOAPCLI_PLACEHOLDERS_FILE`; `/config/placeholders.json`
+  in the Docker image) because they belong to the placeholders, not to a profile. Its variable on the request page becomes a
+  dropdown: the request's own default, each option (optionally with a label), and *Custom value…*. The new
+  **Placeholders** page edits the file, with the same rules as the profiles (who can edit, the revision check, the rest of
+  the file left alone), and a variable without options offers *Give it options*. The command line does not read this file.
+  See [Placeholder options](web-ui.md#placeholder-options). New API: `GET /api/placeholders`, `POST /api/placeholders/save`
+  and `/delete`, `GET /api/profiles/{name}/definition`, `POST /api/profiles/save` and `/delete`.
+- **Attachments by path.** An attachment can be named by its **path on the server** instead of being a file picked in the
+  browser, and only the path is saved with the request (Library, History, the draft), so a request with attachments can be
+  saved and sent again. Each `cid:` row has a path field that checks the file as you type. When you press *Send*, a dialog
+  loads the files one by one with their progress, and the request is sent when all of them load; if one cannot be loaded
+  nothing is sent and the dialog says why (*Close*, *Try again*, or *Cancel* / <kbd>Esc</kbd> to stop). A file chosen on
+  this computer still works and is still never saved. `serve` has a new option, `--attachments-dir`
+  (`SOAPCLI_ATTACHMENTS_DIR`): the server reads only inside that folder (default: its working directory, `/work` in the
+  Docker image), so the UI cannot be used to send arbitrary files of the machine; `..`, absolute paths elsewhere and symbolic
+  links that leave the folder are refused. New API: `POST /api/attachments/check`, and `path` next to `contentBase64` in the
+  attachments of `/api/send` and `/api/preview`; `/api/info` reports `attachmentsDir`. See
+  [Attachments by path](web-ui.md#attachments-by-path).
+- **Layout of the request page**: request and response side by side (as before) or stacked, with the response under the
+  request. Choose it next to *New* or in *Settings*; it is remembered.
+- **Profiles page**: the configuration of each server profile as the server resolves it (after `extends`, secrets masked,
+  `${VAR}` shown as written), as a table and as JSON, with *Use in the request* and *Load its request file*. Also reachable
+  with *View profile* next to the profile selector.
+
 ### Fixed
 
 - The web server now reads and discards what is left of a request body that is too large before answering `413`. Closing

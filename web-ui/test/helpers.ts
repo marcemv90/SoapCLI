@@ -7,20 +7,17 @@ export function draft(patch: Partial<RequestDraft> = {}): RequestDraft {
   return { ...emptyDraft(), endpoint: "http://localhost:1/soap", body: ENV12, ...patch };
 }
 
+/** A file chosen on this computer: its bytes are in memory. */
 export function attachment(cid: string, content: string, filename = `${cid}.bin`): AttachmentInput {
   const data = new TextEncoder().encode(content);
-  return { id: newId(), cid, filename, size: data.length, data };
+  return { kind: "file", id: newId(), cid, filename, size: data.length, data };
+}
+
+/** A file named by its path on the server. */
+export function pathAttachment(cid: string, path: string): AttachmentInput {
+  return { kind: "path", id: newId(), cid, path };
 }
 
 export function header(name: string, value: string) {
   return { id: newId(), name, value, enabled: true };
 }
-
-/** Binary-safe view of a body (the multipart message is ASCII apart from the attachments). */
-export async function bodyAsLatin1(body: Uint8Array | Blob): Promise<string> {
-  const bytes = body instanceof Blob ? new Uint8Array(await body.arrayBuffer()) : body;
-  return new TextDecoder("latin1").decode(bytes);
-}
-
-export const headerOf = (headers: [string, string][], name: string) =>
-  headers.find(([n]) => n.toLowerCase() === name.toLowerCase())?.[1];

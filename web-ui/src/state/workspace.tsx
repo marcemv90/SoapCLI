@@ -1,24 +1,35 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { RequestError, buildRequest } from "@/lib/request";
+import { pathAttachments } from "@/lib/attachments";
+import { MIN_VISIBLE_MS, loadAttachments, pause, pendingItems, type LoadItem } from "@/lib/load-attachments";
 import { SAMPLE_BODY } from "@/lib/sample";
 import {
-  DEFAULT_SETTINGS, HISTORY_LIMIT, KEYS, fromStored, loadJson, saveJson, toStored,
+  HISTORY_LIMIT, KEYS, fromStored, loadJson, loadSettings, saveJson, toStored,
   type HistoryEntry, type SavedRequest, type Settings, type StoredDraft,
 } from "@/lib/storage";
-import { TransportError, sendFromBrowser } from "@/lib/transports/browser";
 import {
-  ServerError, fetchServerInfo, fetchServerProfiles, previewViaServer, sendViaServer,
-  type ServerInfo, type ServerProfiles,
+  ServerError, checkAttachment, fetchPlaceholders, fetchServerInfo, fetchServerProfiles, previewViaServer, sendViaServer,
+  type ServerInfo, type ServerPlaceholders, type ServerProfiles,
 } from "@/lib/transports/server";
 import { emptyDraft, newId, type RequestDraft, type RequestView, type ResponseView } from "@/lib/types";
 
-export type Page = "request" | "library" | "settings";
+export type Page = "request" | "library" | "profiles" | "placeholders" | "settings";
 
 export interface UiError {
-  kind: "config" | "timeout" | "network" | "cancelled" | "server";
+  kind: "server" | "cancelled";
   message: string;
-  hints: string[];
+  /** What the server called the problem: config, forbidden, network, unsupported, too-large, internal, unavailable. */
   category?: string;
+}
+
+/** The files a request names by path, while the server loads them (running) or after one could not be (failed). */
+export interface AttachmentLoad {
+  items: LoadItem[];
+  status: "running" | "failed";
+}
+
+/** Opens the Placeholders page on one placeholder: to give a new one its options, or to edit them. */
+export interface PlaceholderIntent {
+  name: string;
 }
 
 interface Workspace {
@@ -34,9 +45,11 @@ interface Workspace {
   response: ResponseView | null;
   error: UiError | null;
   sending: boolean;
-  /** Sends the draft; `override` changes it first (for instance, to retry through the server). */
-  send: (override?: Partial<RequestDraft>) => Promise<void>;
+  send: () => Promise<void>;
   cancel: () => void;
+  /** Set while the attachments named by path are loaded before sending; the request page shows it in a dialog. */
+  attachmentLoad: AttachmentLoad | null;
+  dismissAttachmentLoad: () => void;
   clearResult: () => void;
   serverPreview: RequestView | null;
   refreshServerPreview: () => Promise<void>;
@@ -54,47 +67,53 @@ interface Workspace {
   settings: Settings;
   setSettings: (patch: Partial<Settings>) => void;
 
-  server: { info: ServerInfo | null; loaded: boolean; profiles: ServerProfiles | null };
-  refreshServer: () => void;
+  server: { info: ServerInfo | null; loaded: boolean; profiles: ServerProfiles | null; placeholders: ServerPlaceholders | null };
+  /** Asks the server again about itself, its profiles and its placeholders; resolves when the answer is in. */
+  refreshServer: () => Promise<void>;
+  /** Set to open the Placeholders page on one placeholder; that page clears it. */
+  placeholderIntent: PlaceholderIntent | null;
+  setPlaceholderIntent: (intent: PlaceholderIntent | null) => void;
 }
 
 const WorkspaceContext = createContext<Workspace | null>(null);
 
 function pageFromHash(): Page {
   const h = window.location.hash.replace(/^#\/?/, "");
-  return h === "library" || h === "settings" ? h : "request";
+  return h === "library" || h === "profiles" || h === "placeholders" || h === "settings" ? h : "request";
 }
 
-function initialDraft(settings: Settings): RequestDraft {
-  const stored = loadJson<Partial<StoredDraft> | undefined>(KEYS.draft, undefined);
-  if (stored && typeof stored.body === "string") return fromStored(stored);
+function newDraft(settings: Settings): RequestDraft {
   const draft = emptyDraft();
   draft.body = SAMPLE_BODY;
-  draft.transport = settings.defaultTransport;
   draft.options.timeoutSeconds = settings.timeoutSeconds;
   draft.options.followRedirects = settings.followRedirects;
   return draft;
 }
 
+function initialDraft(settings: Settings): RequestDraft {
+  const stored = loadJson<Partial<StoredDraft> | undefined>(KEYS.draft, undefined);
+  return stored && typeof stored.body === "string" ? fromStored(stored) : newDraft(settings);
+}
+
 function toUiError(e: unknown): UiError {
-  if (e instanceof RequestError) return { kind: "config", message: e.message, hints: [] };
-  if (e instanceof TransportError) return { kind: e.kind, message: e.message, hints: e.hints };
-  if (e instanceof ServerError) return { kind: "server", message: e.message, hints: [], category: e.category };
-  if (e instanceof DOMException && e.name === "AbortError") return { kind: "cancelled", message: "The request was cancelled.", hints: [] };
-  return { kind: "network", message: e instanceof Error ? e.message : String(e), hints: [] };
+  if (e instanceof ServerError) return { kind: "server", message: e.message, category: e.category };
+  if (e instanceof DOMException && e.name === "AbortError") return { kind: "cancelled", message: "The request was cancelled." };
+  return { kind: "server", message: e instanceof Error ? e.message : String(e) };
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [page, setPage] = useState<Page>(pageFromHash);
-  const [settings, setSettingsState] = useState<Settings>(() => ({ ...DEFAULT_SETTINGS, ...loadJson<Partial<Settings>>(KEYS.settings, {}) }));
+  const [settings, setSettingsState] = useState<Settings>(loadSettings);
   const [draft, setDraft] = useState<RequestDraft>(() => initialDraft(settings));
   const [response, setResponse] = useState<ResponseView | null>(null);
   const [error, setError] = useState<UiError | null>(null);
   const [sending, setSending] = useState(false);
+  const [attachmentLoad, setAttachmentLoad] = useState<AttachmentLoad | null>(null);
   const [serverPreview, setServerPreview] = useState<RequestView | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadJson<HistoryEntry[]>(KEYS.history, []));
   const [saved, setSaved] = useState<SavedRequest[]>(() => loadJson<SavedRequest[]>(KEYS.saved, []));
-  const [server, setServer] = useState<Workspace["server"]>({ info: null, loaded: false, profiles: null });
+  const [server, setServer] = useState<Workspace["server"]>({ info: null, loaded: false, profiles: null, placeholders: null });
+  const [placeholderIntent, setPlaceholderIntent] = useState<PlaceholderIntent | null>(null);
   const controller = useRef<AbortController | null>(null);
 
   // ---- navigation (hash based, so the server needs no routing) --------------------------------------------------
@@ -117,23 +136,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => void saveJson(KEYS.saved, saved), [saved]);
   useEffect(() => void saveJson(KEYS.settings, settings), [settings]);
 
-  // ---- the optional SoapCLI server ------------------------------------------------------------------------------
+  // ---- the SoapCLI server this page came from -------------------------------------------------------------------
   const refreshServer = useCallback(() => {
-    void (async () => {
+    return (async () => {
       const info = await fetchServerInfo();
       let profiles: ServerProfiles | null = null;
+      let placeholders: ServerPlaceholders | null = null;
       if (info) {
-        try {
-          profiles = await fetchServerProfiles();
-        } catch {
-          profiles = null;
-        }
+        [profiles, placeholders] = await Promise.all([
+          fetchServerProfiles().catch(() => null),
+          fetchPlaceholders().catch(() => null),
+        ]);
       }
-      setServer({ info, loaded: true, profiles });
-      if (!info) setDraft((d) => (d.transport === "server" ? { ...d, transport: "browser", profile: "" } : d));
+      setServer({ info, loaded: true, profiles, placeholders });
     })();
   }, []);
-  useEffect(() => refreshServer(), [refreshServer]);
+  useEffect(() => void refreshServer(), [refreshServer]);
 
   // ---- draft ----------------------------------------------------------------------------------------------------
   const patch = useCallback((p: Partial<RequestDraft>) => setDraft((d) => ({ ...d, ...p })), []);
@@ -148,29 +166,40 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     clearResult();
   }, [clearResult]);
   const resetDraft = useCallback(() => {
-    setDraft({ ...emptyDraft(), body: SAMPLE_BODY, transport: settings.defaultTransport,
-      options: { timeoutSeconds: settings.timeoutSeconds, followRedirects: settings.followRedirects, insecure: false } });
+    setDraft(newDraft(settings));
     clearResult();
   }, [clearResult, settings]);
 
   // ---- sending --------------------------------------------------------------------------------------------------
-  const send = useCallback(async (override?: Partial<RequestDraft>) => {
-    const d = override ? { ...draft, ...override } : draft;
-    if (override) setDraft(d);
+  const send = useCallback(async () => {
+    const d = draft;
     controller.current?.abort();
     const ctl = new AbortController();
     controller.current = ctl;
     setSending(true);
     setError(null);
+    setAttachmentLoad(null);
     const record = (extra: Partial<HistoryEntry>) =>
-      setHistory((h) => [{ id: newId(), at: Date.now(), draft: toStored(d), via: d.transport, ...extra }, ...h].slice(0, HISTORY_LIMIT));
+      setHistory((h) => [{ id: newId(), at: Date.now(), draft: toStored(d), ...extra }, ...h].slice(0, HISTORY_LIMIT));
     try {
-      const view = d.transport === "server"
-        ? await sendViaServer(d, ctl.signal)
-        : await sendFromBrowser(buildRequest(d), d.options, ctl.signal);
+      // Files named by path are loaded first, one by one, with a dialog; the request goes out only if all of them load.
+      const files = pathAttachments(d);
+      if (files.length > 0) {
+        const opened = Date.now();
+        setAttachmentLoad({ items: pendingItems(files), status: "running" });
+        const loaded = await loadAttachments(files, checkAttachment, (items) => setAttachmentLoad({ items, status: "running" }), ctl.signal);
+        if (!loaded.ok) {
+          setAttachmentLoad({ items: loaded.items, status: "failed" });
+          return;
+        }
+        await pause(Math.max(0, MIN_VISIBLE_MS - (Date.now() - opened)), ctl.signal);
+        setAttachmentLoad(null);
+      }
+      const view = await sendViaServer(d, ctl.signal);
       setResponse(view);
       record({ status: view.status, statusText: view.statusText, elapsedMs: view.elapsedMs });
     } catch (e) {
+      setAttachmentLoad(null);
       const ui = toUiError(e);
       setError(ui);
       setResponse(null);
@@ -180,6 +209,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [draft]);
   const cancel = useCallback(() => controller.current?.abort(), []);
+  const dismissAttachmentLoad = useCallback(() => setAttachmentLoad(null), []);
 
   const refreshServerPreview = useCallback(async () => {
     try {
@@ -218,11 +248,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Workspace>(() => ({
     page, navigate, draft, patch, update, loadStored, resetDraft, response, error, sending, send, cancel, clearResult,
-    serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
-    exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer,
+    attachmentLoad, dismissAttachmentLoad, serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
+    exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer, placeholderIntent, setPlaceholderIntent,
   }), [page, navigate, draft, patch, update, loadStored, resetDraft, response, error, sending, send, cancel, clearResult,
-    serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
-    exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer]);
+    attachmentLoad, dismissAttachmentLoad, serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
+    exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer, placeholderIntent]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

@@ -33,8 +33,9 @@ LABEL org.opencontainers.image.title="SoapCLI" \
       org.opencontainers.image.source="https://github.com/marcemv90/SoapCLI" \
       org.opencontainers.image.documentation="https://marcemv90.github.io/SoapCLI/"
 
-# Never run as root. /work is where the command line client finds your files (mount them there);
-# /config is where the web UI finds the profiles file (mount it there).
+# Never run as root. /work is where the command line client finds your files and the only place the web UI reads
+# attachments from, when a request names a file by path (mount them there); /config is where the web UI finds the
+# profiles and placeholders files (mount it there; without :ro, and with SOAPCLI_ALLOW_CONFIG_EDIT=true, the UI can edit them).
 RUN useradd --system --uid 10001 --user-group --create-home --home-dir /home/soapcli --shell /usr/sbin/nologin soapcli \
  && mkdir -p /app /work /config \
  && chown soapcli:soapcli /work /config
@@ -44,7 +45,9 @@ COPY --from=build /SoapCLI.jar /app/SoapCLI.jar
 # Inside a container the UI must listen on all interfaces; what is reachable from outside is decided by `-p`.
 ENV SOAPCLI_HOST=0.0.0.0 \
     SOAPCLI_PORT=8080 \
-    SOAPCLI_PROFILE_FILE=/config/profiles.json
+    SOAPCLI_PROFILE_FILE=/config/profiles.json \
+    SOAPCLI_PLACEHOLDERS_FILE=/config/placeholders.json \
+    SOAPCLI_ATTACHMENTS_DIR=/work
 
 USER soapcli
 WORKDIR /work

@@ -105,18 +105,18 @@ Use `--raw` if the tool needs the exact bytes the server sent.
 Check the warning on stderr: the name must match a `___NAME:default___` placeholder in the request exactly (names are
 case-sensitive). See [Placeholders](cli-placeholders.md).
 
-## The web UI says "The browser could not reach the service"
+## The web UI says "No SoapCLI server behind this page" or "Cannot reach the SoapCLI server"
 
-When the UI sends from **your browser**, the service must allow it with CORS headers, and most SOAP services do not.
-Press *Check if the host answers* to tell a CORS block from an unreachable host, and *Send through the SoapCLI server* to
-send the same request from the server, which is not subject to CORS. Also: a page served over HTTPS cannot call `http://`
-URLs, and a self-signed certificate must be accepted in the browser first (open the URL in a tab). See
-[Web UI](web-ui.md#cors-why-a-call-from-the-browser-can-fail).
+The UI never calls the service itself: it sends the request to the SoapCLI server that served the page, and that server
+calls the service (so the service does not need to allow CORS). The message means the page was opened without that server
+(a copy of the files, or a stopped process), or the server went away. Start `java -jar SoapCLI.jar serve`, open the address
+it prints, and press *Check again*. If instead the server answers "could not reach the service", the problem is between the
+**server's machine** and the service: host name, port, VPN, proxy, firewall.
 
 ## Can I use the web UI against a service that needs a client certificate or a proxy?
 
-Yes, through the **SoapCLI server** transport: put the certificates and proxy in a [profile](cli-profiles.md) on the
-machine that runs `serve` and choose it in the UI. A browser cannot be given a client certificate by a web page.
+Yes: put the certificates and proxy in a [profile](cli-profiles.md) on the machine that runs `serve` and choose it next to
+the endpoint. The *Profiles* page of the UI shows what each profile resolves to (secrets hidden).
 
 ## Java is not installed on this machine
 
@@ -127,8 +127,8 @@ line client.
 ## The container cannot reach `localhost:8081` on my machine
 
 Inside a container `localhost` is the container. Use `host.docker.internal` instead (on Linux add
-`--add-host=host.docker.internal:host-gateway`), or `--network host`. If you use the UI's *This browser* transport this
-does not apply, because the call is made by your browser, not by the container.
+`--add-host=host.docker.internal:host-gateway`), or `--network host`. This applies to the web UI too: its calls are made by
+the server inside the container, not by your browser.
 
 ## Can the web UI live under a path such as `/soapcli/`?
 

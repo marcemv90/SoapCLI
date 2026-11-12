@@ -33,6 +33,61 @@ class ServeOptionsTest {
     }
 
     @Test
+    void attachmentsAreOnlyReadFromTheWorkingDirectoryUnlessToldOtherwise() {
+        ServeOptions o = parse(Collections.emptyMap());
+        assertEquals(Paths.get("").toAbsolutePath().normalize(), o.attachmentsDir);
+        assertFalse(o.attachmentsDirExplicit);
+
+        Map<String, String> env = new HashMap<>();
+        env.put("SOAPCLI_ATTACHMENTS_DIR", "/work/../data/files");
+        o = parse(env);
+        assertEquals(Paths.get("/data/files").toAbsolutePath(), o.attachmentsDir);
+        assertTrue(o.attachmentsDirExplicit);
+
+        o = parse(env, "--attachments-dir", "/srv/attach");           // the command line wins
+        assertEquals(Paths.get("/srv/attach").toAbsolutePath(), o.attachmentsDir);
+        assertThrows(ConfigException.class, () -> parse(Collections.emptyMap(), "--attachments-dir", " "));
+        assertTrue(ServeOptions.usage().contains("--attachments-dir"));
+    }
+
+    @Test
+    void editingTheConfigurationFilesIsOnlyTheDefaultOnThisMachine() {
+        ServeOptions local = parse(Collections.emptyMap());
+        assertTrue(local.configEditAllowed());
+        assertNull(local.configEditOffReason());
+
+        ServeOptions network = parse(Collections.emptyMap(), "--host", "0.0.0.0");
+        assertFalse(network.configEditAllowed());
+        assertTrue(network.configEditOffReason().contains("--allow-config-edit"), network.configEditOffReason());
+
+        assertTrue(parse(Collections.emptyMap(), "--host", "0.0.0.0", "--allow-config-edit").configEditAllowed());
+        ServeOptions off = parse(Collections.emptyMap(), "--no-config-edit");
+        assertFalse(off.configEditAllowed());
+        assertTrue(off.configEditOffReason().contains("--no-config-edit"));
+
+        Map<String, String> env = new HashMap<>();
+        env.put("SOAPCLI_HOST", "0.0.0.0");
+        env.put("SOAPCLI_ALLOW_CONFIG_EDIT", "true");
+        assertTrue(parse(env).configEditAllowed());
+        env.put("SOAPCLI_ALLOW_CONFIG_EDIT", "false");
+        env.put("SOAPCLI_HOST", "127.0.0.1");
+        assertFalse(parse(env).configEditAllowed(), "an explicit no beats the local default");
+        env.put("SOAPCLI_ALLOW_CONFIG_EDIT", " ");
+        assertTrue(parse(env).configEditAllowed(), "blank means not set");
+        assertTrue(ServeOptions.usage().contains("--allow-config-edit") && ServeOptions.usage().contains("--placeholders-file"));
+    }
+
+    @Test
+    void thePlaceholdersFileHasItsOwnLocation() {
+        assertEquals(Paths.get("/home/me", ".config", "soap-cli-placeholders.json"), parse(Collections.emptyMap()).placeholdersFile);
+        Map<String, String> env = new HashMap<>();
+        env.put("SOAPCLI_PLACEHOLDERS_FILE", "/config/placeholders.json");
+        assertEquals(Paths.get("/config/placeholders.json"), parse(env).placeholdersFile);
+        assertEquals(Paths.get("/x/p.json"), parse(env, "--placeholders-file", "/x/p.json").placeholdersFile);
+        assertThrows(ConfigException.class, () -> parse(Collections.emptyMap(), "--placeholders-file", ""));
+    }
+
+    @Test
     void theEnvironmentConfiguresAContainer() {
         Map<String, String> env = new HashMap<>();
         env.put("SOAPCLI_HOST", "0.0.0.0");

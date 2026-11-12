@@ -22,6 +22,8 @@ export { ClockIcon } from "./clock";
 export { GearIcon } from "./gear";
 export { DatabaseIcon } from "./database";
 export { CodeIcon } from "./code";
+export { ColumnsIcon } from "./columns";
+export { RowsIcon } from "./rows";
 export { ChevronDownIcon } from "./chevron-down";
 export { AngleDownIcon } from "./angle-down";
 export { AngleUpIcon } from "./angle-up";

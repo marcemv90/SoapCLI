@@ -24,6 +24,8 @@ export interface SegmentedOption<T extends string> {
   label: ReactNode;
   disabled?: boolean;
   title?: string;
+  /** For an option that shows only an icon. */
+  ariaLabel?: string;
 }
 
 /** A pill-shaped single choice, in the style of TailAdmin's tabs. */
@@ -45,6 +47,7 @@ export function Segmented<T extends string>({ value, onChange, options, label }:
             aria-checked={active}
             disabled={o.disabled}
             title={o.title}
+            aria-label={o.ariaLabel}
             onClick={() => onChange(o.value)}
             className={cn(
               "inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium whitespace-nowrap transition-colors outline-hidden",
