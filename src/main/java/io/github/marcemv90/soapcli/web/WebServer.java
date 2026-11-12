@@ -9,10 +9,14 @@ import io.github.marcemv90.soapcli.core.ConfigException;
 import io.github.marcemv90.soapcli.core.HostNotAllowedException;
 import io.github.marcemv90.soapcli.core.TransportException;
 import io.github.marcemv90.soapcli.web.ApiModel.AttachmentCheckRequest;
+import io.github.marcemv90.soapcli.web.ApiModel.CreateWorkspaceRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.DeleteRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.ErrorResponse;
 import io.github.marcemv90.soapcli.web.ApiModel.FormatRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.FormatResponse;
+import io.github.marcemv90.soapcli.web.ApiModel.RemoveWorkspaceRequest;
+import io.github.marcemv90.soapcli.web.ApiModel.SaveSavedRequest;
+import io.github.marcemv90.soapcli.web.ApiModel.SavedRequestRef;
 import io.github.marcemv90.soapcli.web.ApiModel.SavePlaceholderRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.SaveProfileRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.SendError;
@@ -202,98 +206,39 @@ public final class WebServer implements AutoCloseable {
         return handleStatic(method, path);
     }
 
+    private static final String WORKSPACES_PREFIX = "/api/workspaces/";
+
     private Response handleApi(HttpExchange ex, String method, String path) throws IOException {
         try {
-            switch (path) {
-                case "/api/info":
-                    return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.info());
-                case "/api/profiles":
-                    return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.profiles());
-                case "/api/placeholders":
-                    return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.placeholders());
-                case "/api/profiles/save": {
-                    Response bad = requireJsonPost(ex, method);
-                    if (bad != null) {
-                        return bad;
-                    }
-                    return jsonResponse(200, api.saveProfile(readJson(ex, SaveProfileRequest.class)));
-                }
-                case "/api/profiles/delete": {
-                    Response bad = requireJsonPost(ex, method);
-                    if (bad != null) {
-                        return bad;
-                    }
-                    return jsonResponse(200, api.deleteProfile(readJson(ex, DeleteRequest.class)));
-                }
-                case "/api/placeholders/save": {
-                    Response bad = requireJsonPost(ex, method);
-                    if (bad != null) {
-                        return bad;
-                    }
-                    return jsonResponse(200, api.savePlaceholder(readJson(ex, SavePlaceholderRequest.class)));
-                }
-                case "/api/placeholders/delete": {
-                    Response bad = requireJsonPost(ex, method);
-                    if (bad != null) {
-                        return bad;
-                    }
-                    return jsonResponse(200, api.deletePlaceholder(readJson(ex, DeleteRequest.class)));
-                }
-                case "/api/send": {
-                    Response bad = requireJsonPost(ex, method);
-                    if (bad != null) {
-                        return bad;
-                    }
-                    SendRequest request = readJson(ex, SendRequest.class);
-                    return jsonResponse(200, api.send(request));
-                }
-                case "/api/preview": {
-                    Response bad = requireJsonPost(ex, method);
-                    if (bad != null) {
-                        return bad;
-                    }
-                    SendRequest request = readJson(ex, SendRequest.class);
-                    return jsonResponse(200, api.preview(request));
-                }
-                case "/api/attachments/check": {
-                    Response bad = requireJsonPost(ex, method);
-                    if (bad != null) {
-                        return bad;
-                    }
-                    AttachmentCheckRequest request = readJson(ex, AttachmentCheckRequest.class);
-                    return jsonResponse(200, api.checkAttachment(request.path));
-                }
-                case "/api/format": {
-                    Response bad = requireJsonPost(ex, method);
-                    if (bad != null) {
-                        return bad;
-                    }
-                    FormatRequest request = readJson(ex, FormatRequest.class);
-                    FormatResponse response = new FormatResponse();
-                    response.xml = api.format(request.xml);
-                    return jsonResponse(200, response);
-                }
-                default:
-                    if (path.startsWith("/api/profiles/") && path.endsWith("/definition")) {
-                        if (requireGet(method) != null) {
-                            return requireGet(method);
-                        }
-                        String name = URLDecoder.decode(
-                                path.substring("/api/profiles/".length(), path.length() - "/definition".length()),
-                                StandardCharsets.UTF_8);
-                        return jsonResponse(200, api.profileDefinition(name));
-                    }
-                    if (path.startsWith("/api/profiles/") && path.endsWith("/request")) {
-                        if (requireGet(method) != null) {
-                            return requireGet(method);
-                        }
-                        String name = URLDecoder.decode(
-                                path.substring("/api/profiles/".length(), path.length() - "/request".length()),
-                                StandardCharsets.UTF_8);
-                        return text(200, "text/xml; charset=utf-8", api.profileRequest(name));
-                    }
-                    return error(404, "unsupported", "Unknown API endpoint");
+            // Workspaces are listed, created and removed at /api/workspaces...
+            if (path.equals("/api/workspaces")) {
+                return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.listWorkspaces());
             }
+            if (path.equals("/api/workspaces/create")) {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.createWorkspace(readJson(ex, CreateWorkspaceRequest.class)));
+            }
+            if (path.equals("/api/workspaces/remove")) {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.removeWorkspace(readJson(ex, RemoveWorkspaceRequest.class)));
+            }
+            // ...and everything a workspace has is under /api/workspaces/{name}/, with the same endpoints as the single set
+            // of files of a server without workspaces has at /api/.
+            if (path.startsWith(WORKSPACES_PREFIX)) {
+                String rest = path.substring(WORKSPACES_PREFIX.length());
+                int slash = rest.indexOf('/');
+                if (slash <= 0) {
+                    return error(404, "unsupported", "Unknown API endpoint");
+                }
+                Workspace ws = api.workspaces().get(rest.substring(0, slash));
+                return handleScoped(ex, method, "/api" + rest.substring(slash), ws);
+            }
+            // Not asking for a workspace: fine for what concerns the whole server, and for a server without workspaces
+            if (api.workspaces().enabled() && !path.equals("/api/info") && !path.equals("/api/format")) {
+                return error(400, "config", "This server uses workspaces: call /api/workspaces/{name}" + path.substring("/api".length())
+                        + " (the workspaces are listed at /api/workspaces)");
+            }
+            return handleScoped(ex, method, path, api.workspaces().single());
         } catch (SendError e) {
             return error(e.httpStatus, e.category, e.getMessage());
         } catch (HostNotAllowedException e) {
@@ -302,6 +247,99 @@ public final class WebServer implements AutoCloseable {
             return error(400, "config", e.getMessage());
         } catch (TransportException e) {
             return error(502, "network", e.getMessage());
+        }
+    }
+
+    /**
+     * The endpoints that act on one workspace's files. {@code path} is written as if for a server without workspaces
+     * ({@code /api/profiles}); {@code ws} is {@code null} only for the endpoints of the whole server.
+     */
+    private Response handleScoped(HttpExchange ex, String method, String path, Workspace ws) throws IOException {
+        switch (path) {
+            case "/api/info":
+                return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.info(ws));
+            case "/api/format": {
+                Response bad = requireJsonPost(ex, method);
+                if (bad != null) {
+                    return bad;
+                }
+                FormatRequest request = readJson(ex, FormatRequest.class);
+                FormatResponse response = new FormatResponse();
+                response.xml = api.format(request.xml);
+                return jsonResponse(200, response);
+            }
+            case "/api/profiles":
+                return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.profiles(ws));
+            case "/api/placeholders":
+                return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.placeholders(ws));
+            case "/api/requests":
+                return requireGet(method) != null ? requireGet(method) : jsonResponse(200, api.library(ws, true));
+            case "/api/profiles/save": {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.saveProfile(ws, readJson(ex, SaveProfileRequest.class)));
+            }
+            case "/api/profiles/delete": {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.deleteProfile(ws, readJson(ex, DeleteRequest.class)));
+            }
+            case "/api/placeholders/save": {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.savePlaceholder(ws, readJson(ex, SavePlaceholderRequest.class)));
+            }
+            case "/api/placeholders/delete": {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.deletePlaceholder(ws, readJson(ex, DeleteRequest.class)));
+            }
+            case "/api/requests/save": {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.saveRequest(ws, readJson(ex, SaveSavedRequest.class)));
+            }
+            case "/api/requests/delete": {
+                Response bad = requireJsonPost(ex, method);
+                if (bad != null) {
+                    return bad;
+                }
+                api.deleteRequest(ws, readJson(ex, SavedRequestRef.class));
+                return jsonResponse(200, new java.util.LinkedHashMap<String, Object>());
+            }
+            case "/api/send": {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.send(ws, readJson(ex, SendRequest.class)));
+            }
+            case "/api/preview": {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.preview(ws, readJson(ex, SendRequest.class)));
+            }
+            case "/api/attachments/check": {
+                Response bad = requireJsonPost(ex, method);
+                return bad != null ? bad : jsonResponse(200, api.checkAttachment(ws, readJson(ex, AttachmentCheckRequest.class).path));
+            }
+            default:
+                if (path.startsWith("/api/profiles/") && path.endsWith("/definition")) {
+                    if (requireGet(method) != null) {
+                        return requireGet(method);
+                    }
+                    String name = URLDecoder.decode(
+                            path.substring("/api/profiles/".length(), path.length() - "/definition".length()),
+                            StandardCharsets.UTF_8);
+                    return jsonResponse(200, api.profileDefinition(ws, name));
+                }
+                if (path.startsWith("/api/profiles/") && path.endsWith("/request")) {
+                    if (requireGet(method) != null) {
+                        return requireGet(method);
+                    }
+                    String name = URLDecoder.decode(
+                            path.substring("/api/profiles/".length(), path.length() - "/request".length()),
+                            StandardCharsets.UTF_8);
+                    return text(200, "text/xml; charset=utf-8", api.profileRequest(ws, name));
+                }
+                if (path.startsWith("/api/requests/")) {
+                    if (requireGet(method) != null) {
+                        return requireGet(method);
+                    }
+                    return jsonResponse(200, api.savedRequest(ws, path.substring("/api/requests/".length())));
+                }
+                return error(404, "unsupported", "Unknown API endpoint");
         }
     }
 

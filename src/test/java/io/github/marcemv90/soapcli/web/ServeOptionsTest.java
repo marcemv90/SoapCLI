@@ -165,4 +165,53 @@ class ServeOptionsTest {
         }
         assertNull(parse(Collections.emptyMap()).uiUser);
     }
+
+    @Test
+    void workspacesAreOffUnlessAFolderIsGiven() {
+        ServeOptions none = parse(Collections.emptyMap());
+        assertNull(none.workspacesDir);
+        assertFalse(none.workspacesEnabled());
+
+        Map<String, String> env = new HashMap<>();
+        env.put("SOAPCLI_WORKSPACES_DIR", "/srv/ws/../teams");
+        ServeOptions fromEnv = parse(env);
+        assertTrue(fromEnv.workspacesEnabled());
+        assertEquals(Paths.get("/srv/teams").toAbsolutePath(), fromEnv.workspacesDir);
+
+        assertEquals(Paths.get("/other").toAbsolutePath(), parse(env, "--workspaces-dir", "/other").workspacesDir, "the command line wins");
+        assertEquals(Paths.get("/other").toAbsolutePath(), parse(Collections.emptyMap(), "--workspaces-dir=/other").workspacesDir);
+        assertThrows(ConfigException.class, () -> parse(Collections.emptyMap(), "--workspaces-dir", " "));
+        assertThrows(ConfigException.class, () -> parse(Collections.emptyMap(), "--workspaces-dir"));
+        assertTrue(ServeOptions.usage().contains("--workspaces-dir") && ServeOptions.usage().contains("SOAPCLI_WORKSPACES_DIR"));
+    }
+
+    @Test
+    void workspacesReplaceTheSingleSetOfFilesSoNamingBothOnTheCommandLineIsAMistake() {
+        for (String flag : new String[]{"--profile-file", "--placeholders-file", "--attachments-dir"}) {
+            ConfigException e = assertThrows(ConfigException.class,
+                    () -> parse(Collections.emptyMap(), "--workspaces-dir", "/ws", flag, "/x"), flag);
+            assertTrue(e.getMessage().contains(flag) && e.getMessage().contains("--workspaces-dir"), e.getMessage());
+        }
+        // ... but the Docker image sets these three variables for everybody, so they are tolerated (and unused)
+        Map<String, String> env = new HashMap<>();
+        env.put("SOAPCLI_PROFILE_FILE", "/config/profiles.json");
+        env.put("SOAPCLI_PLACEHOLDERS_FILE", "/config/placeholders.json");
+        env.put("SOAPCLI_ATTACHMENTS_DIR", "/work");
+        env.put("SOAPCLI_WORKSPACES_DIR", "/workspaces");
+        assertTrue(parse(env).workspacesEnabled());
+    }
+
+    @Test
+    void theLibraryOnlyStopsBeingEditableWhenEditingIsSwitchedOff() {
+        // sharing requests is what workspaces are for, so a network address does not need --allow-config-edit for it
+        ServeOptions network = parse(Collections.emptyMap(), "--host", "0.0.0.0");
+        assertFalse(network.configEditAllowed());
+        assertTrue(network.libraryEditAllowed());
+        assertNull(network.libraryEditOffReason());
+
+        ServeOptions off = parse(Collections.emptyMap(), "--no-config-edit");
+        assertFalse(off.libraryEditAllowed());
+        assertTrue(off.libraryEditOffReason().contains("--no-config-edit"));
+        assertTrue(parse(Collections.emptyMap(), "--host", "0.0.0.0", "--allow-config-edit").libraryEditAllowed());
+    }
 }
