@@ -1,4 +1,5 @@
-import { bytesToBase64 } from "../charset";
+import { activeAttachments } from "../attachments";
+import { bytesToBase64 } from "../format";
 import type { HeaderPair, RequestDraft, RequestView, ResponseView } from "../types";
 
 /** A failure of the SoapCLI server or of a call it made for us. */
@@ -122,7 +123,8 @@ export async function fetchProfileRequest(name: string): Promise<string> {
   return response.text();
 }
 
-/** The JSON the server expects for a draft. Secrets travel only to the server the page came from. */
+/** The JSON the server expects for a draft. Secrets travel only to the server the page came from. Only the files
+ * the body refers to with `cid:` are included. */
 export function toServerRequest(draft: RequestDraft): Record<string, unknown> {
   const headers: Record<string, string> = {};
   for (const h of draft.headers) if (h.enabled && h.name.trim()) headers[h.name.trim()] = h.value;
@@ -141,9 +143,8 @@ export function toServerRequest(draft: RequestDraft): Record<string, unknown> {
     followRedirects: draft.options.followRedirects,
     insecure: draft.options.insecure || undefined,
     mtom: draft.mtom,
-    attachments: draft.attachments
-      .filter((a) => a.cid.trim())
-      .map((a) => ({ cid: a.cid.trim(), filename: a.filename, contentBase64: bytesToBase64(a.data) })),
+    attachments: activeAttachments(draft)
+      .map((a) => ({ cid: a.cid, filename: a.filename, contentBase64: bytesToBase64(a.data) })),
   };
 }
 
@@ -165,7 +166,6 @@ function toRequestView(info: ApiRequestInfo): RequestView {
 export async function sendViaServer(draft: RequestDraft, signal?: AbortSignal): Promise<ResponseView> {
   const r = await api<ApiSendResponse>("send", { json: toServerRequest(draft), signal });
   return {
-    via: "server",
     status: r.status,
     statusText: r.statusMessage,
     elapsedMs: r.elapsedMillis,
@@ -178,7 +178,6 @@ export async function sendViaServer(draft: RequestDraft, signal?: AbortSignal): 
     binary: r.binary,
     bodyBase64: r.bodyBase64,
     redirectLocation: r.location,
-    notes: [],
     request: toRequestView(r.request),
   };
 }

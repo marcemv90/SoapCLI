@@ -15,12 +15,3 @@ export function attachment(cid: string, content: string, filename = `${cid}.bin`
 export function header(name: string, value: string) {
   return { id: newId(), name, value, enabled: true };
 }
-
-/** Binary-safe view of a body (the multipart message is ASCII apart from the attachments). */
-export async function bodyAsLatin1(body: Uint8Array | Blob): Promise<string> {
-  const bytes = body instanceof Blob ? new Uint8Array(await body.arrayBuffer()) : body;
-  return new TextDecoder("latin1").decode(bytes);
-}
-
-export const headerOf = (headers: [string, string][], name: string) =>
-  headers.find(([n]) => n.toLowerCase() === name.toLowerCase())?.[1];

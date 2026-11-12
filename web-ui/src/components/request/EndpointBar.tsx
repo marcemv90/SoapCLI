@@ -5,13 +5,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { ChevronDownIcon, CodeIcon, DownloadIcon, FloppyDiscIcon, GlobeIcon, SendIcon, XIcon } from "@/icons";
+import { ChevronDownIcon, CodeIcon, ColumnsIcon, DownloadIcon, FloppyDiscIcon, GlobeIcon, RowsIcon, SendIcon, XIcon } from "@/icons";
 import { toCliCommand, toCurl } from "@/lib/command";
 import { copyText, downloadFile } from "@/lib/format";
 import { findPlaceholders } from "@/lib/placeholders";
-import { RequestError, buildRequest } from "@/lib/request";
 import type { SoapVersion } from "@/lib/soap";
-import type { Transport } from "@/lib/types";
+import type { RequestLayout } from "@/lib/storage";
+import { previewViaServer } from "@/lib/transports/server";
 import { useWorkspace } from "@/state/workspace";
 import { Kbd, NativeSelect, Segmented } from "@/components/common/controls";
 
@@ -25,15 +25,16 @@ function CopyAsMenu() {
   };
   const copy = async (text: string, what: string) => done((await copyText(text)) ? `${what} copied` : "Could not copy");
 
-  const curl = () => {
+  // The server builds the request (headers, version, endpoint of a profile...), so it is asked for it.
+  const curl = async () => {
     try {
-      const body = toCurl(draft, buildRequest(draft));
+      const body = toCurl(draft, await previewViaServer(draft));
       if (body === null) return done("curl cannot send MTOM; use the CLI command");
       const note = findPlaceholders(draft.body).length > 0
         ? "# request.xml must hold the final XML: replace the ___NAME:default___ markers first\n" : "";
-      void copy(note + body, "curl command");
+      await copy(note + body, "curl command");
     } catch (e) {
-      done(e instanceof RequestError ? e.message : "Cannot build the request");
+      done(e instanceof Error ? e.message : "Cannot build the request");
     }
   };
 
@@ -51,7 +52,7 @@ function CopyAsMenu() {
           <DropdownMenuItem onClick={() => void copy(toCliCommand(draft, "docker"), "Docker command")}>
             <CodeIcon className="size-5" /> SoapCLI command (Docker)
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={curl}>
+          <DropdownMenuItem onClick={() => void curl()}>
             <CodeIcon className="size-5" /> curl command
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -106,9 +107,8 @@ function SaveDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
 }
 
 export function EndpointBar() {
-  const { draft, patch, send, cancel, sending, server, resetDraft } = useWorkspace();
+  const { draft, patch, send, cancel, sending, server, resetDraft, settings, setSettings, navigate } = useWorkspace();
   const [saving, setSaving] = useState(false);
-  const serverReady = server.info !== null;
   const profiles = server.profiles?.profiles ?? [];
 
   return (
@@ -156,24 +156,26 @@ export function EndpointBar() {
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <Segmented<Transport>
-          label="Where the call is made from"
-          value={draft.transport}
-          onChange={(transport) => patch({ transport, profile: transport === "browser" ? "" : draft.profile })}
-          options={[
-            { value: "browser", label: "This browser", title: "Calls go straight from your browser: reaches anything your machine reaches, but needs CORS" },
-            { value: "server", label: "SoapCLI server", disabled: !serverReady,
-              title: serverReady ? "Calls are made by the SoapCLI server this page came from" : "This page was not served by a SoapCLI server" },
-          ]}
-        />
-        {draft.transport === "server" && profiles.length > 0 && (
-          <NativeSelect aria-label="Server profile" className="h-10 w-52" value={draft.profile} onChange={(e) => patch({ profile: e.target.value })}>
-            <option value="">No profile</option>
-            {profiles.map((p) => <option key={p.name} value={p.name}>Profile: {p.name}</option>)}
-          </NativeSelect>
+        {profiles.length > 0 && (
+          <div className="flex items-center gap-2">
+            <NativeSelect aria-label="Server profile" className="h-10 w-52" value={draft.profile} onChange={(e) => patch({ profile: e.target.value })}>
+              <option value="">No profile</option>
+              {profiles.map((p) => <option key={p.name} value={p.name}>Profile: {p.name}</option>)}
+            </NativeSelect>
+            {draft.profile && <Button variant="ghost" size="sm" onClick={() => navigate("profiles")}>View profile</Button>}
+          </div>
         )}
         <div className="ms-auto flex flex-wrap items-center gap-2">
           <span className="hidden text-xs text-gray-500 md:inline dark:text-gray-400"><Kbd>Ctrl</Kbd> + <Kbd>Enter</Kbd> to send</span>
+          <Segmented<RequestLayout>
+            label="Layout of the request and the response"
+            value={settings.requestLayout}
+            onChange={(requestLayout) => setSettings({ requestLayout })}
+            options={[
+              { value: "side", label: <ColumnsIcon className="size-5" />, ariaLabel: "Side by side", title: "Request and response side by side" },
+              { value: "stacked", label: <RowsIcon className="size-5" />, ariaLabel: "Stacked", title: "Response below the request" },
+            ]}
+          />
           <Button variant="ghost" size="sm" onClick={resetDraft} title="Start a new request"><XIcon /> New</Button>
           <Button variant="outline" size="sm" onClick={() => setSaving(true)}><FloppyDiscIcon /> Save</Button>
           <CopyAsMenu />

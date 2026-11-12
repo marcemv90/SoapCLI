@@ -66,12 +66,13 @@ public final class WebServer implements AutoCloseable {
         CONTENT_TYPES.put("txt", "text/plain; charset=utf-8");
     }
     /**
-     * The page must be able to call any http(s) URL (that is the point of a browser client), so connect-src is open;
-     * scripts, in contrast, may only come from this server, which is what keeps injected content from running.
-     * Styles allow inline because the editor and the pop-ups set theirs at run time.
+     * The page only ever talks to this server (the calls to the services are made by the server, not by the browser),
+     * so connect-src is 'self'; scripts may only come from this server either, which is what keeps injected content from
+     * running or from sending anything elsewhere. Styles allow inline because the editor and the pop-ups set theirs at
+     * run time.
      */
     private static final String CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-            + "img-src 'self' data: blob:; font-src 'self'; connect-src http: https:; base-uri 'none'; "
+            + "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; base-uri 'none'; "
             + "form-action 'none'; frame-ancestors 'none'";
 
     /** One HTTP answer, built by a route and written by {@link #write}. */

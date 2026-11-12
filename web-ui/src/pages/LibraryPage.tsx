@@ -95,7 +95,7 @@ export function LibraryPage() {
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-mono text-xs text-gray-800 dark:text-white/90">{h.draft.endpoint || "(no endpoint)"}</div>
                         <div className="truncate text-xs text-gray-500 dark:text-gray-400">
-                          {formatWhen(h.at)} · {h.via === "browser" ? "browser" : "server"}{h.elapsedMs !== undefined ? ` · ${formatDuration(h.elapsedMs)}` : ""}{h.error ? ` · ${h.error}` : ""}
+                          {formatWhen(h.at)}{h.draft.profile ? ` · profile ${h.draft.profile}` : ""}{h.elapsedMs !== undefined ? ` · ${formatDuration(h.elapsedMs)}` : ""}{h.error ? ` · ${h.error}` : ""}
                         </div>
                       </div>
                       <Button size="xs" variant="outline" onClick={() => open(h.draft)}>Open</Button>

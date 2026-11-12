@@ -17,9 +17,6 @@ export interface AttachmentInput {
 
 export type AuthKind = "none" | "basic" | "bearer";
 
-/** Where the call is made from: this browser directly, or the SoapCLI server the page came from. */
-export type Transport = "browser" | "server";
-
 export interface RequestDraft {
   endpoint: string;
   body: string;
@@ -29,11 +26,11 @@ export interface RequestDraft {
   /** Values for ___NAME:default___ placeholders; only the ones the user filled in. */
   args: Record<string, string>;
   auth: { kind: AuthKind; user: string; password: string; token: string };
+  /** The file chosen for each `cid:` of the body (one per cid). Kept in memory only. */
   attachments: AttachmentInput[];
   mtom: boolean;
   options: { timeoutSeconds: number; followRedirects: boolean; insecure: boolean };
-  transport: Transport;
-  /** Name of a profile on the SoapCLI server (server transport only), or "". */
+  /** Name of a profile on the SoapCLI server, or "". */
   profile: string;
 }
 
@@ -55,7 +52,6 @@ export function emptyDraft(): RequestDraft {
     attachments: [],
     mtom: false,
     options: { timeoutSeconds: 60, followRedirects: false, insecure: false },
-    transport: "browser",
     profile: "",
   };
 }
@@ -75,7 +71,6 @@ export interface RequestView {
 }
 
 export interface ResponseView {
-  via: Transport;
   status: number;
   statusText: string;
   elapsedMs: number;
@@ -91,9 +86,5 @@ export interface ResponseView {
   bodyBase64?: string;
   /** Where a redirect that was not followed pointed to. */
   redirectLocation?: string;
-  /** The browser followed or hid a redirect and does not say where to. */
-  opaqueRedirect?: boolean;
-  /** Things worth knowing about how to read this response (for instance, hidden headers). */
-  notes: string[];
   request: RequestView;
 }

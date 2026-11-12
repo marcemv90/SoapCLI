@@ -1,49 +1,66 @@
 import { describe, expect, it } from "vitest";
-import { isValidCid, mentionsCid, replaceCids, xopInclude } from "../src/lib/cid";
+import { activeAttachments, referencedCids } from "../src/lib/attachments";
+import { findCids } from "../src/lib/cid";
+import { attachment, draft } from "./helpers";
 
-describe("replaceCids (same cases as CidReplacerTest.java)", () => {
-  it("matches exact content ids, not prefixes", () => {
-    const xml = "<p><x>cid:message1</x><y>cid:message10</y><z>cid:message1-b</z></p>";
-    const r = replaceCids(xml, ["message1", "message10"], (c) => `[${c}]`, false);
-    expect(r.text).toBe("<p><x>[message1]</x><y>[message10]</y><z>cid:message1-b</z></p>");
-    expect([...r.referenced].sort()).toEqual(["message1", "message10"]);
+describe("findCids", () => {
+  it("shows the cid of an element, not the one of an attribute", () => {
+    const xml = `<payload payloadId="cid:message" contentType="text/xml">
+  <value>cid:1234</value>
+</payload>`;
+    expect(findCids(xml)).toEqual(["1234"]);
   });
 
-  it("never touches attributes or comments", () => {
-    const xml = '<p payloadId="cid:a"><!-- cid:a --><v>cid:a</v></p>';
-    expect(replaceCids(xml, ["a"], () => "X", true).text).toBe('<p payloadId="cid:a"><!-- cid:a --><v>X</v></p>');
+  it("lists each cid once, in order of appearance", () => {
+    expect(findCids("<a><x>cid:b</x><y>cid:a</y><z>cid:b</z></a>")).toEqual(["b", "a"]);
   });
 
-  it("searches CDATA only when asked", () => {
+  it("ignores comments, processing instructions and attributes with either quote", () => {
+    expect(findCids(`<a href='cid:q' id="cid:r"><!-- cid:c --><?pi cid:d?><v>cid:e</v></a>`)).toEqual(["e"]);
+  });
+
+  it("reads CDATA only when asked (inline Base64 replaces it, MTOM does not)", () => {
     const xml = "<v><![CDATA[cid:a]]></v>";
-    expect(replaceCids(xml, ["a"], () => "X", false).text).toBe(xml);
-    expect(replaceCids(xml, ["a"], () => "X", true).text).toBe("<v><![CDATA[X]]></v>");
+    expect(findCids(xml)).toEqual([]);
+    expect(findCids(xml, { cdata: true })).toEqual(["a"]);
   });
 
-  it("computes each replacement once", () => {
-    let calls = 0;
-    replaceCids("<a>cid:x</a><b>cid:x</b>", ["x"], () => {
-      calls++;
-      return "Z";
-    }, true);
-    expect(calls).toBe(1);
+  it("takes the whole content-id and not a word that merely ends in cid:", () => {
+    expect(findCids("<a>cid:part.1@host-x_y+z%20</a>")).toEqual(["part.1@host-x_y+z%20"]);
+    expect(findCids("<a>mycid:nope</a>")).toEqual([]);
   });
 
-  it("does not rescan inserted text", () => {
-    const r = replaceCids("<a>cid:m</a>", ["m", "x"], xopInclude, false);
-    expect(r.text).toBe('<a><inc:Include href="cid:m" xmlns:inc="http://www.w3.org/2004/08/xop/include"/></a>');
+  it("finds a reference among other text and several in one element", () => {
+    expect(findCids("<a>file cid:one and cid:two!</a>")).toEqual(["one", "two"]);
   });
 
-  it("quotes regex characters in content ids", () => {
-    expect(replaceCids("<a>cid:part.1@host</a>", ["part.1@host"], () => "OK", false).text).toBe("<a>OK</a>");
-    expect(replaceCids("<a>cid:partX1@host</a>", ["part.1@host"], () => "OK", false).text).toBe("<a>cid:partX1@host</a>");
+  it("is empty for text without references and for empty input", () => {
+    expect(findCids("<a>cid: </a>")).toEqual([]);
+    expect(findCids("")).toEqual([]);
   });
 
-  it("finds attribute-only references and validates ids", () => {
-    expect(mentionsCid('<p href="cid:a"/>', "a")).toBe(true);
-    expect(mentionsCid('<p href="cid:ab"/>', "a")).toBe(false);
-    expect(isValidCid("message-1.a@b")).toBe(true);
-    expect(isValidCid("bad id")).toBe(false);
-    expect(isValidCid("")).toBe(false);
+  it("can be called repeatedly (no shared regex state)", () => {
+    for (let i = 0; i < 3; i++) expect(findCids("<a>cid:x</a>")).toEqual(["x"]);
+  });
+});
+
+describe("activeAttachments", () => {
+  const body = "<a><v>cid:keep</v><w href=\"cid:attr\"/></a>";
+
+  it("keeps the files whose cid the body refers to, and drops the rest", () => {
+    const d = draft({ body, attachments: [attachment("keep", "1"), attachment("gone", "2"), attachment("attr", "3")] });
+    expect(activeAttachments(d).map((a) => a.cid)).toEqual(["keep"]);
+  });
+
+  it("follows what is typed: the file returns when its reference does", () => {
+    const files = [attachment("keep", "1")];
+    expect(activeAttachments(draft({ body: "<a/>", attachments: files }))).toEqual([]);
+    expect(activeAttachments(draft({ body, attachments: files }))).toHaveLength(1);
+  });
+
+  it("counts CDATA references in inline mode only", () => {
+    const cdata = "<v><![CDATA[cid:a]]></v>";
+    expect(referencedCids({ body: cdata, mtom: false })).toEqual(["a"]);
+    expect(referencedCids({ body: cdata, mtom: true })).toEqual([]);
   });
 });

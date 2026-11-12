@@ -1,41 +1,13 @@
-import { useMemo, useRef, useState, type DragEvent } from "react";
-import { CodeEditor } from "@/components/common/CodeEditor";
+import { useState } from "react";
 import { FieldLabel, Segmented } from "@/components/common/controls";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { EyeCloseIcon, EyeIcon, PaperClipIcon, PlusIcon, TrashBinIcon, UploadIcon } from "@/icons";
-import { formatBytes } from "@/lib/format";
-import { findPlaceholders } from "@/lib/placeholders";
-import { isForbiddenHeader } from "@/lib/request";
-import { SAMPLE_BODY } from "@/lib/sample";
-import { detectSoapVersion } from "@/lib/soap";
+import { EyeCloseIcon, EyeIcon, PlusIcon, TrashBinIcon } from "@/icons";
 import { newId, type AuthKind } from "@/lib/types";
-import { clean, prettyPrint } from "@/lib/xml";
 import { useWorkspace } from "@/state/workspace";
 
 const COMMON_HEADERS = ["SOAPAction", "Accept", "Accept-Language", "Content-Type", "X-Correlation-ID", "X-Request-ID", "X-Api-Key", "X-Forwarded-For"];
-
-export function BodyTab() {
-  const { draft, patch } = useWorkspace();
-  const detected = useMemo(() => detectSoapVersion(clean(draft.body)), [draft.body]);
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {detected
-          ? <Badge variant="light" color="success" size="sm">Detected SOAP {detected}</Badge>
-          : <Badge variant="light" color="gray" size="sm">SOAP version not detected</Badge>}
-        <div className="flex gap-2">
-          <Button variant="outline" size="xs" onClick={() => patch({ body: prettyPrint(draft.body) })}>Format</Button>
-          <Button variant="outline" size="xs" onClick={() => patch({ body: SAMPLE_BODY })}>Sample</Button>
-          <Button variant="outline" size="xs" onClick={() => patch({ body: "" })}>Clear</Button>
-        </div>
-      </div>
-      <CodeEditor value={draft.body} onChange={(body) => patch({ body })} placeholder="Paste your SOAP envelope here" minHeight="360px" />
-    </div>
-  );
-}
 
 export function HeadersTab() {
   const { draft, update } = useWorkspace();
@@ -71,11 +43,6 @@ export function HeadersTab() {
               <TrashBinIcon />
             </Button>
           </div>
-          {draft.transport === "browser" && h.enabled && h.name && isForbiddenHeader(h.name) && (
-            <p className="ps-7 text-xs text-amber-600 dark:text-amber-400">
-              Browsers do not let a page set “{h.name}”, so it will not be sent. The SoapCLI server transport can.
-            </p>
-          )}
         </div>
       ))}
       <div>
@@ -122,116 +89,8 @@ export function AuthTab() {
           <SecretInput label="Token" value={auth.token} onChange={(token) => set({ token })} placeholder="eyJhbGciOi…" /></div>
       )}
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        {draft.transport === "browser"
-          ? "Credentials are sent from this browser straight to the endpoint."
-          : "Credentials are sent to the SoapCLI server, which uses them for this call."}
-        {" "}They are never kept in the history or the library, and are forgotten when you close this tab.
+        Credentials are sent to the SoapCLI server, which uses them for this call. They are never kept in the history or the library, and are forgotten when you close this tab.
       </p>
-    </div>
-  );
-}
-
-export function VariablesTab() {
-  const { draft, patch } = useWorkspace();
-  const placeholders = useMemo(() => findPlaceholders(draft.body), [draft.body]);
-  const set = (name: string, value: string) => {
-    const args = { ...draft.args };
-    if (value === "") delete args[name];
-    else args[name] = value;
-    patch({ args });
-  };
-  if (placeholders.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-        Write <code className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-white/10 dark:text-gray-300">___NAME:default___</code> anywhere
-        in the request and it shows up here, so you can change the value without editing the XML.
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-gray-500 dark:text-gray-400">Leave a value empty to use the default written in the request.</p>
-      {placeholders.map((p) => (
-        <div key={p.name} className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
-          <code className="truncate text-sm font-medium text-gray-800 dark:text-white/90" title={p.name}>{p.name}</code>
-          <Input aria-label={`Value for ${p.name}`} placeholder={p.defaultValue || "(empty)"} value={draft.args[p.name] ?? ""}
-            onChange={(e) => set(p.name, e.target.value)} />
-          <Badge variant="light" color="gray" size="sm" className="justify-self-start">
-            {draft.args[p.name] !== undefined ? "custom" : "default"}
-          </Badge>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function cidFromFilename(name: string, taken: Set<string>): string {
-  const base = name.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9._~%@+-]/g, "_") || "attachment";
-  let cid = base;
-  for (let i = 2; taken.has(cid); i++) cid = `${base}-${i}`;
-  return cid;
-}
-
-export function AttachmentsTab() {
-  const { draft, patch, update } = useWorkspace();
-  const input = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-
-  const addFiles = async (files: FileList | File[]) => {
-    const loaded = await Promise.all([...files].map(async (f) => ({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) })));
-    update((d) => {
-      const taken = new Set(d.attachments.map((a) => a.cid));
-      const added = loaded.map((f) => {
-        const cid = cidFromFilename(f.name, taken);
-        taken.add(cid);
-        return { id: newId(), cid, filename: f.name, size: f.data.length, data: f.data };
-      });
-      return { ...d, attachments: [...d.attachments, ...added] };
-    });
-  };
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-gray-500 dark:text-gray-400">
-        Reference a file in the request as <code className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-white/10 dark:text-gray-300">cid:CID</code>,
-        for example <code className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-white/10 dark:text-gray-300">&lt;value&gt;cid:report&lt;/value&gt;</code>.
-        By default it is replaced by the file's Base64; with MTOM it is sent as a separate MIME part.
-      </p>
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        className={`flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center transition-colors ${dragging ? "border-brand-400 bg-brand-50 dark:bg-brand-500/10" : "border-gray-300 dark:border-gray-700"}`}
-      >
-        <UploadIcon className="size-6 text-gray-400" />
-        <Button variant="outline" size="sm" onClick={() => input.current?.click()}><PaperClipIcon /> Add files</Button>
-        <span className="text-xs text-gray-500 dark:text-gray-400">or drop them here. They stay in memory and are not saved.</span>
-        <input ref={input} type="file" multiple hidden onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
-      </div>
-      {draft.attachments.map((a) => (
-        <div key={a.id} className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto_auto]">
-          <Input aria-label={`CID of ${a.filename}`} value={a.cid}
-            onChange={(e) => update((d) => ({ ...d, attachments: d.attachments.map((x) => (x.id === a.id ? { ...x, cid: e.target.value } : x)) }))} />
-          <span className="truncate text-sm text-gray-700 dark:text-gray-300" title={a.filename}>{a.filename}</span>
-          <Badge variant="light" color="gray" size="sm">{formatBytes(a.size)}</Badge>
-          <Button variant="ghost" size="icon-sm" aria-label={`Remove ${a.filename}`}
-            onClick={() => update((d) => ({ ...d, attachments: d.attachments.filter((x) => x.id !== a.id) }))}><TrashBinIcon /></Button>
-        </div>
-      ))}
-      <label className="flex items-start gap-3">
-        <Switch checked={draft.mtom} onCheckedChange={(mtom) => patch({ mtom })} aria-label="Send as MTOM" />
-        <span>
-          <span className="block text-sm font-medium text-gray-800 dark:text-white/90">Send as MTOM/XOP</span>
-          <span className="block text-xs text-gray-500 dark:text-gray-400">
-            A multipart/related message with the envelope and each file as a binary part, instead of Base64 inside the XML.
-          </span>
-        </span>
-      </label>
     </div>
   );
 }
@@ -240,7 +99,7 @@ export function OptionsTab() {
   const { draft, patch, server } = useWorkspace();
   const opts = draft.options;
   const set = (change: Partial<typeof opts>) => patch({ options: { ...opts, ...change } });
-  const insecureAllowed = draft.transport === "server" && server.info?.insecureTlsAllowed !== false;
+  const insecureAllowed = server.info?.insecureTlsAllowed !== false;
   return (
     <div className="flex flex-col gap-5">
       <div className="max-w-xs">
@@ -253,9 +112,8 @@ export function OptionsTab() {
         <span>
           <span className="block text-sm font-medium text-gray-800 dark:text-white/90">Follow redirects</span>
           <span className="block text-xs text-gray-500 dark:text-gray-400">
-            Off by default: a redirected POST is easy to lose. {draft.transport === "browser"
-              ? "A browser turns a redirected POST into a GET and does not say where it went."
-              : "The server re-sends the same POST and drops credentials if the redirect leaves the original host."}
+            Off by default: a redirected POST is easy to lose. When on, the server re-sends the same POST and drops credentials if
+            the redirect leaves the original host.
           </span>
         </span>
       </label>
@@ -265,11 +123,9 @@ export function OptionsTab() {
         <span>
           <span className="block text-sm font-medium text-gray-800 dark:text-white/90">Skip TLS certificate checks</span>
           <span className="block text-xs text-gray-500 dark:text-gray-400">
-            {draft.transport === "browser"
-              ? "A browser cannot skip them. Open the URL in a tab and accept the certificate, or use the SoapCLI server transport."
-              : insecureAllowed
-                ? "For throw-away tests only: anyone on the network path could read or alter the traffic."
-                : "Disabled by the server's administrator."}
+            {insecureAllowed
+              ? "For throw-away tests only: anyone on the network path could read or alter the traffic."
+              : "Disabled by the server's administrator."}
           </span>
         </span>
       </label>

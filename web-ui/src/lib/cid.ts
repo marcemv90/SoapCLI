@@ -1,59 +1,22 @@
 import { scan } from "./xml";
 
-/** Characters that can be part of a content-id (RFC 2392 / RFC 2045 tokens, roughly). */
+/** Characters that can be part of a content-id (RFC 2392 / RFC 2045 tokens, roughly). Same set as CidReplacer.java. */
 const ID_CHARS = "A-Za-z0-9._~%@+\\-";
 
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 /**
- * Replaces `cid:XXX` references in the *character data* of a SOAP message and leaves tags, attributes and comments
- * exactly as written. A reference ends where the content-id ends: `cid:message1` does not match inside
- * `cid:message10` or `cid:message1-b`. Port of CidReplacer.java.
+ * The files the request refers to: every `cid:XXX` written in the *character data* of the message, once each, in order
+ * of appearance. References inside attributes (`payloadId="cid:message"`), comments and processing instructions are
+ * not attachments and are ignored, exactly as the server ignores them when it replaces the references.
+ *
+ * `cdata` says whether CDATA sections count: they do when the file is inlined as Base64, they do not with MTOM.
  */
-export function replaceCids(
-  xml: string,
-  cids: string[],
-  replacement: (cid: string) => string,
-  inCdata: boolean,
-): { text: string; referenced: Set<string> } {
-  const referenced = new Set<string>();
-  if (cids.length === 0 || !xml) return { text: xml, referenced };
-
-  const alternation = [...cids]
-    .sort((a, b) => b.length - a.length)
-    .map(escapeRegExp)
-    .join("|");
-  const pattern = new RegExp(`(?<![${ID_CHARS}])cid:(${alternation})(?![${ID_CHARS}])`, "g");
-  const cache = new Map<string, string>();
-
-  let out = "";
+export function findCids(xml: string, options: { cdata?: boolean } = {}): string[] {
+  const found = new Set<string>();
+  if (!xml) return [];
   for (const token of scan(xml)) {
-    const eligible = token.type === "text" || (inCdata && token.type === "cdata");
-    if (!eligible) {
-      out += token.text;
-      continue;
-    }
-    out += token.text.replace(pattern, (_all, cid: string) => {
-      referenced.add(cid);
-      let value = cache.get(cid);
-      if (value === undefined) {
-        value = replacement(cid);
-        cache.set(cid, value);
-      }
-      return value;
-    });
+    if (token.type !== "text" && !(options.cdata && token.type === "cdata")) continue;
+    // A fresh regex per token: a shared /g regex keeps its position between uses.
+    for (const m of token.text.matchAll(new RegExp(`(?<![${ID_CHARS}])cid:([${ID_CHARS}]+)`, "g"))) found.add(m[1]);
   }
-  return { text: out, referenced };
-}
-
-/** Whether `cid:<cid>` appears anywhere in the document, attributes included. */
-export function mentionsCid(xml: string, cid: string): boolean {
-  return new RegExp(`(?<![${ID_CHARS}])cid:${escapeRegExp(cid)}(?![${ID_CHARS}])`).test(xml);
-}
-
-export const isValidCid = (cid: string) => new RegExp(`^[${ID_CHARS}]+$`).test(cid);
-
-/** The XOP element that MTOM puts where the inline base64 would have been. */
-export function xopInclude(cid: string): string {
-  return `<inc:Include href="cid:${cid}" xmlns:inc="http://www.w3.org/2004/08/xop/include"/>`;
+  return [...found];
 }

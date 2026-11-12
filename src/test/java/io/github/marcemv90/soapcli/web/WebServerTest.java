@@ -132,7 +132,8 @@ class WebServerTest {
         assertTrue(csp.contains("script-src 'self'"), csp);
         assertFalse(csp.contains("unsafe-eval"), csp);
         assertFalse(csp.contains("script-src 'self' 'unsafe-inline'"), csp);
-        assertTrue(csp.contains("connect-src http: https:"), "the browser client must be able to call other URLs: " + csp);
+        assertTrue(csp.contains("connect-src 'self'"), "the page may only call its own server: " + csp);
+        assertFalse(csp.contains("connect-src http"), csp);
         assertEquals("nosniff", r.headers().firstValue("X-Content-Type-Options").orElse(null));
         assertEquals("DENY", r.headers().firstValue("X-Frame-Options").orElse(null));
         assertEquals("no-referrer", r.headers().firstValue("Referrer-Policy").orElse(null));
