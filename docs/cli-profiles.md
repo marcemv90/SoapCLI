@@ -8,6 +8,9 @@ every command line.
 A profile may also **inherit** from another one (`extends`) and refer to **environment variables** (`${VAR}`), so
 secrets do not have to be stored in the file.
 
+The [web UI](web-ui.md#server-profiles) shows the profiles and, where the server allows it, can create, edit and delete
+them without disturbing the comments and formatting of the rest of the file.
+
 !!! note
     Any CLI flag that has a corresponding field in the profiles JSON can be configured per profile.
     CLI flags still override the profile values at runtime.

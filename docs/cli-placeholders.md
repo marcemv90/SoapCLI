@@ -88,6 +88,11 @@ warning is printed on stderr, since the value would otherwise be silently ignore
 Warning: Argument 'CIDD' is not used by any ___CIDD:default___ placeholder in the request
 ```
 
+## Dropdowns in the web UI
+
+In the [web UI](web-ui.md#placeholder-options) a placeholder can offer a list of options, kept in a file of its own, so its
+variable becomes a dropdown. The command line client does not read that file: `--arg` takes any value.
+
 ## Placeholders in profiles
 
 A profile can set values for the placeholders with an `args` object, so each environment carries its own IDs; command

@@ -45,7 +45,9 @@ remembered.
 - **Body**: an XML editor with highlighting, folding and line numbers (*Format* pretty-prints it). Under the editor, the
   two things the body refers to are listed, so you never leave the screen:
     - **Variables**: every `___NAME:default___` in the request gets a field, so you can change a value without editing
-      the XML ([placeholders](cli-placeholders.md)). A field left empty uses the default written in the request.
+      the XML ([placeholders](cli-placeholders.md)). A field left empty uses the default written in the request. A
+      placeholder that has [options](#placeholder-options) is a **dropdown** instead: the request's own default, each
+      option, and *Custom value…* to type another one.
     - **Attachments**: every `cid:NAME` written as the **text** of an element is detected automatically, and you give
       the file for it. A `cid:` inside an **attribute** is not an attachment and is not listed. In
       ```xml
@@ -79,7 +81,7 @@ profile appear as `****` for you to fill in), and *Download request.xml* saves t
 to repeat in a script.
 
 **Library** keeps your *Saved* requests and the last 50 calls (*History*), searchable by name or URL, with *Export* and
-*Import* of the saved ones as a JSON file. **Profiles** shows the server's profiles (below). **Settings** holds the theme,
+*Import* of the saved ones as a JSON file. **Profiles** and **Placeholders** show, and can edit, the server's profiles and the options of the placeholders (below). **Settings** holds the theme,
 the layout, the defaults for new requests and the details of the server (version, allowed destinations, limits).
 
 ## Server profiles
@@ -97,7 +99,78 @@ request* selects it, and *Load its request file* fills the editor with the profi
 
 Secrets stay on the server: the browser only ever receives the profile with them masked (`****`), and `${VAR}`
 references are shown as written and expanded by the server from its own environment. The server reads the file on every
-request, so edits take effect immediately (press *Reload* to see them). Profiles cannot be edited from the UI.
+request, so edits made by hand take effect immediately (press *Reload* to see them).
+
+### Editing profiles
+
+**Edit** opens a profile as a form, **New profile** creates one, and **Delete** removes it.
+
+![The profile form: the settings of a profile, with what it inherits shown where a field is empty](assets/img/web-ui/profile-edit-light.png)
+
+- The form edits what the profile **itself** says, not what it inherits. A field left empty shows what the profile would
+  get from the one it extends (*inherited: 1.1*), and a group that is inherited (the proxy, the client certificate, the
+  trust store) can be switched off for this profile (*Do not use the proxy that base defines*, which is written as
+  `null`).
+- **Secrets** never reach the page. A saved one shows as *saved*; *Change* lets you type a new value (leave it empty to
+  remove the secret), and *Keep the saved one* undoes that. This holds for `authBasic`, `authBearer`, the passwords, and any
+  header or variable whose name looks like a secret (`X-Api-Key`, `TOKEN`...).
+- Settings the form does not know (a typo, or a setting of a newer version) are kept as they are.
+- **The file is edited, not rewritten.** Only the profile you change is replaced: the other profiles, their formatting and
+  the comments around them stay byte for byte as they were (comments *inside* the edited profile are lost). The file is
+  replaced atomically, keeps its permissions and, if it is a symbolic link, stays one; a file that did not exist is created
+  readable by its owner only.
+- **Nobody's change is overwritten.** Every save quotes the revision of the file the form was made from; if the file
+  changed since (by hand, or in another window), the save is refused and *Reload the file* gives up the edits and shows
+  what is there now.
+- **A profile that would not work is refused.** The same checks as when the profile is used run first (types, `extends`,
+  loops), and a change must not break a profile that extends this one. A profile cannot be deleted while another extends
+  it. Things worth knowing, such as a setting SoapCLI ignores, or a `${VAR}` that is not set on the server (so the types
+  could not be checked), are shown after saving.
+
+**Who can edit.** Editing a profile can send its credentials to another destination, or point it at any file of the
+machine (`requestFile`, `attachments`, `keystore`), so it is not on for everybody:
+
+| The server | Editing from the UI |
+|---|---|
+| listens on this machine only (the default, `127.0.0.1`) | **on**, if the file is writable |
+| listens on a network address (and so does Docker, inside the container) | **off**, until you start it with `--allow-config-edit` |
+| started with `--no-config-edit` | off |
+
+The file must be writable too: with Docker, mount the folder with the profiles *without* `:ro`
+([details](docker.md#profiles-and-secrets)). When editing is off the page says why, and everything can still be viewed
+and used. Turn it on for a shared server only together with a login (`--ui-user`).
+
+## Placeholder options
+
+A placeholder (`___ENV:acceptance___`) can offer a **dropdown** of values instead of a text field. The options are not
+part of a profile, because they belong to the placeholders, not to an environment: they live in a file of their own,
+`~/.config/soap-cli-placeholders.json` by default (`--placeholders-file`, `SOAPCLI_PLACEHOLDERS_FILE`;
+`/config/placeholders.json` in the Docker image). Like the profiles file, it accepts comments and trailing commas:
+
+```json
+{
+  // Options for the placeholders of a request
+  "placeholders": {
+    "ENV": { "options": ["acceptance", "staging", { "value": "production", "label": "Production (careful)" }] },
+    "COUNTRY": {
+      "description": "Country code",
+      "options": [{ "value": "ES", "label": "Spain" }, { "value": "NL", "label": "Netherlands" }]
+    }
+  }
+}
+```
+
+An option is a value, or a `{ "value", "label" }` when the dropdown should show something friendlier than the value
+(*Spain (ES)*). Options are matched by the name of the placeholder, in any request. The first choice of the dropdown is
+always the request's own default, and *Custom value…* lets you type something that is not listed. A problem with one
+entry (say, `options` is not a list) is reported on that entry and does not stop the others.
+
+![The Placeholders page: the options of a placeholder](assets/img/web-ui/placeholders-light.png)
+
+The **Placeholders** page edits the file, with the same rules as the profiles (who can edit, the revision check, the rest
+of the file left alone): add a placeholder, give it options (one by one, or pasted as lines of `value` or
+`value | label`), put them in order, and remove them. From a request, *Give it options* (or *Edit the options*) under a
+variable opens the page on that placeholder. The command line client does not read this file: `--arg` takes any value.
 
 ## Attachments by path
 
@@ -144,6 +217,8 @@ like any internal tool that can call other systems:
   It is HTTP Basic, so put the server behind **HTTPS** (a reverse proxy; see [Docker](docker.md#behind-a-reverse-proxy)).
 - **Restrict where it can call**: `--allow-host '*.corp.example.com' --allow-host 10.1.*`. Redirects are checked too, so
   an allowed host cannot bounce a request to a forbidden one.
+- **Think before turning on editing** on a network address (`--allow-config-edit`): whoever can open the UI can then
+  change a profile's endpoint and so receive its credentials ([details](#editing-profiles)). Only with a login.
 - **Choose the attachments folder** with `--attachments-dir`: people using the UI can attach, and so send to the
   destinations they may call, any file inside it ([details](#attachments-by-path)).
 - **Remove the dangerous switch** if you want: `--no-insecure-tls` hides "Skip TLS certificate checks".
@@ -163,6 +238,8 @@ Content-Security-Policy: scripts may only come from the server itself.
 | `--ui-user`, `--ui-password`, `--ui-password-env` | `SOAPCLI_UI_USER`, `SOAPCLI_UI_PASSWORD` | no login |
 | `--allow-host` (repeatable) | `SOAPCLI_ALLOWED_HOSTS` (comma separated) | any host |
 | `--no-insecure-tls` | `SOAPCLI_NO_INSECURE_TLS=true` | allowed |
+| `--placeholders-file` | `SOAPCLI_PLACEHOLDERS_FILE` | `~/.config/soap-cli-placeholders.json` |
+| `--allow-config-edit` / `--no-config-edit` | `SOAPCLI_ALLOW_CONFIG_EDIT=true` / `false` | on only if listening on this machine |
 | `--attachments-dir` | `SOAPCLI_ATTACHMENTS_DIR` | the working directory (`/work` in Docker) |
 | `--max-body-mb` | `SOAPCLI_MAX_BODY_MB` | 25 |
 | `--max-response-mb` | `SOAPCLI_MAX_RESPONSE_MB` | 20 |
@@ -191,6 +268,9 @@ the address it prints.
 | "Cannot reach the SoapCLI server" | The server stopped or the connection was lost. *Check the server again* once it is back. |
 | "The host … is not allowed by this server's policy" | The administrator restricted the destinations (`--allow-host`). |
 | "larger than 25 MB" | Raise `--max-body-mb` (the request, attachments included, is limited). |
+| No *Edit* / *New profile* buttons | Editing is off (the page says why): a network address needs `--allow-config-edit`, and the file must be writable (Docker: no `:ro`). |
+| "The profiles file changed since you opened it" | Someone (or you, by hand) changed it. *Reload the file* shows the current content; make the change again. |
+| "This change would break the profile …" | A profile that extends this one would stop working. Fix that one first, or change both. |
 | "… is outside the folder this server allows for attachments" | The path leaves the attachments folder (`--attachments-dir`; `/work` in Docker). Put the file inside it. |
 | "The attachment file '…' was not found" | The path is read on the **server's** machine, not yours. With Docker, mount the files, e.g. `-v "$PWD/attachments:/work:ro"`. |
 | An attachment you expected is not listed | Its `cid:` must be the text of an element, not the value of an attribute. |

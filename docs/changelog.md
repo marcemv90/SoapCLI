@@ -23,6 +23,24 @@
 
 ### Added
 
+- **Edit profiles from the web UI.** The *Profiles* page can create, edit and delete profiles, with a form for every
+  setting. It edits what the profile itself says (what it inherits shows as *inherited: …* in the empty fields, and an
+  inherited proxy or certificate can be switched off for the profile), keeps the settings the form does not know, and never
+  sees a secret: a saved one shows as *saved* and is kept unless a new value is typed. Only the edited profile is rewritten:
+  the rest of the file, its formatting and its comments stay byte for byte (the file is replaced atomically and keeps its
+  permissions and symbolic link). A save quotes the revision of the file it was made from, so a change made meanwhile is
+  never overwritten; a profile that would not work, or that would break one that extends it, is refused. **Who can edit:**
+  on by default only when the server listens on this machine; on a network address (Docker included) it needs the new
+  `--allow-config-edit` (`SOAPCLI_ALLOW_CONFIG_EDIT=true`), and `--no-config-edit` switches it off. The file must be
+  writable (with Docker, mount `/config` without `:ro`). See [Editing profiles](web-ui.md#editing-profiles).
+- **Dropdowns for placeholders.** A placeholder can have **options**, kept in a file of its own
+  (`~/.config/soap-cli-placeholders.json`; `--placeholders-file`, `SOAPCLI_PLACEHOLDERS_FILE`; `/config/placeholders.json`
+  in the Docker image) because they belong to the placeholders, not to a profile. Its variable on the request page becomes a
+  dropdown: the request's own default, each option (optionally with a label), and *Custom value…*. The new
+  **Placeholders** page edits the file, with the same rules as the profiles (who can edit, the revision check, the rest of
+  the file left alone), and a variable without options offers *Give it options*. The command line does not read this file.
+  See [Placeholder options](web-ui.md#placeholder-options). New API: `GET /api/placeholders`, `POST /api/placeholders/save`
+  and `/delete`, `GET /api/profiles/{name}/definition`, `POST /api/profiles/save` and `/delete`.
 - **Attachments by path.** An attachment can be named by its **path on the server** instead of being a file picked in the
   browser, and only the path is saved with the request (Library, History, the draft), so a request with attachments can be
   saved and sent again. Each `cid:` row has a path field that checks the file as you type. When you press *Send*, a dialog

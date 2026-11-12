@@ -33,11 +33,13 @@ rebuild or used another `npm ci`.
 
 ```text
 src/
-  main.tsx, App.tsx          entry, hash routing (#/request, #/library, #/profiles, #/settings)
-  pages/                     RequestPage, LibraryPage, ProfilesPage, SettingsPage
+  main.tsx, App.tsx          entry, hash routing (#/request, #/library, #/profiles, #/placeholders, #/settings)
+  pages/                     RequestPage, LibraryPage, ProfilesPage, PlaceholdersPage, SettingsPage
   components/
     layout/AppShell.tsx      sidebar, header, theme toggle
-    request/                 EndpointBar, body (editor, variables, attachments), tabs (headers, auth, options), ResponsePanel
+    request/                 EndpointBar, body (editor, variables, attachments), tabs (headers, auth, options), ResponsePanel,
+                             AttachmentLoadDialog
+    profiles/                ProfileForm and its form controls (fields, secrets, name/value tables)
     common/                  CodeEditor (CodeMirror), small controls
     ui/                      TailAdmin components
   state/                     workspace (draft, response, history, saved, settings, server info), theme
@@ -46,7 +48,9 @@ src/
                              `cid:` references of the attachments list)
     attachments.ts           which assigned files are sent: the ones whose `cid:` the body still refers to
     load-attachments.ts      loads the files named by path, one by one, before sending (drives the progress dialog)
-    transports/server.ts     /api/send, /api/preview, /api/format, /api/info, /api/profiles
+    profile-form.ts          the model of the profile form: a profile as the JSON it is, edited by path; secrets are `****`
+    placeholder-options.ts   the rows of the placeholder options editor, pasted lists
+    transports/server.ts     /api/send, /api/preview, /api/format, /api/info, /api/profiles, /api/placeholders (and their edits)
     command.ts               "Copy as" (SoapCLI, Docker, curl)
     storage.ts               what is kept in localStorage (never secrets or attachment contents)
 test/                        Vitest suites

@@ -10,6 +10,7 @@ io.github.marcemv90.soapcli
 │   ├── CallConfig, TransportOptions, TlsConfig, ProxyConfig   what the user asked for (plain fields)
 │   ├── HostPolicy                                             allow-list of destination hosts (checked on every hop)
 │   ├── Profiles, Profile                                      named presets: extends, ${ENV}, masking
+│   ├── JsonSplice                                             edits one entry of a JSON file in place (comments kept)
 │   ├── RequestBuilder → PreparedRequest                       placeholders, SOAP version, attachments, headers
 │   ├── SoapClient → SoapResponse                              HTTP(S) transport, redirects, errors
 │   ├── TlsSupport, ProxySupport                               key/trust stores, --insecure, proxy auth
@@ -23,6 +24,8 @@ io.github.marcemv90.soapcli
     ├── ServeCommand, ServeOptions                             `serve` / `healthcheck`: options, env defaults, banner
     ├── WebServer                                              JDK com.sun.net.httpserver: routing, security headers,
     │                                                          login, static files from the classpath (/web)
+    ├── ConfigFile                                             a file the UI may edit: revision, writability, safe write
+    ├── PlaceholderOptions                                     the dropdown options of the placeholders (own file)
     └── ApiService, ApiModel                                   the JSON API over the engine, and its DTOs
 
 web-ui/                       the interface: React + TypeScript + Tailwind + TailAdmin; builds into
@@ -97,6 +100,10 @@ dependency). It serves two things:
 | `POST /api/send` | build and send a request (`ApiModel.SendRequest` → `SendResponse`) |
 | `POST /api/preview` | the request that would be sent, with credentials masked |
 | `POST /api/attachments/check` | open an attachment path, confined to the attachments folder, and report its name and size |
+| `GET /api/profiles/{name}/definition` | a profile as the file has it (not merged), secrets masked, and who extends it |
+| `POST /api/profiles/save`, `/api/profiles/delete` | create, replace or remove a profile in the file |
+| `GET /api/placeholders` | the options of the placeholders, with whether they can be edited |
+| `POST /api/placeholders/save`, `/api/placeholders/delete` | create, replace or remove a placeholder's options |
 | `POST /api/format` | pretty-print XML (same code as the CLI) |
 
 ### One engine
@@ -121,6 +128,16 @@ A server that sends HTTP requests for whoever can reach it is an SSRF machine, s
   (`--max-body-mb`, `--max-response-mb`) and timeouts are capped; `--no-insecure-tls` removes the "skip checks" switch.
 - Secrets never go to the browser: profiles are described masked, and a request refers to a profile by name. Attachments
   arrive as Base64, are written to a private temporary directory with server-chosen names and deleted afterwards.
+- **Editing the configuration files.** `GET /api/profiles` and `/api/placeholders` say whether the file can be edited
+  and why not. A change needs the server's permission (`ServeOptions.configEditAllowed`: on by default only when it listens
+  on this machine, `--allow-config-edit` / `--no-config-edit` otherwise), a writable file, and the *revision* of the file the
+  edit was made from (a hash of its bytes; a stale one is a `409`, so nothing is overwritten). `JsonSplice` replaces only
+  the entry that changes, so comments and formatting elsewhere survive, and verifies that the result parses to the original
+  document plus exactly that entry before anything is written; `ConfigFile` writes through a temporary file and an atomic
+  move (in place where that is impossible, such as a single-file Docker volume), keeping the permissions and symbolic links.
+  Secrets are never sent to the browser: a profile is described masked (`Profiles.own`), and a secret that comes back as
+  `****` is replaced by the saved value (`Profiles.restoreSecrets`). A new or changed profile is validated like one that
+  is used (`Profiles.validate`), as are the profiles that extend it. All of these are JSON `POST`s, like the rest.
 - An attachment can also be named by **path**, and then the server reads that file: `ApiService.resolveAttachment`
   confines it to `--attachments-dir` (default: the working directory, `/work` in Docker). The path is made absolute and
   normalised and compared with the folder *before* the disk is touched (so a path outside it reveals nothing about what
