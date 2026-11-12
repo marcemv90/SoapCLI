@@ -1,0 +1,29 @@
+{
+  "app": "soapcli",
+  "version": 1,
+  "name": "Get order (demo)",
+  "folder": "Orders",
+  "updatedAt": "2026-11-12T09:00:00Z",
+  "draft": {
+    "endpoint": "",
+    "body": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ord=\"http://example.com/orders\">\n  <soapenv:Header/>\n  <soapenv:Body>\n    <ord:GetOrder>\n      <ord:Environment>___ENV:demo___</ord:Environment>\n      <ord:OrderId>___ORDER_ID:1001___</ord:OrderId>\n      <ord:Country>___COUNTRY:ES___</ord:Country>\n    </ord:GetOrder>\n  </soapenv:Body>\n</soapenv:Envelope>\n",
+    "soapVersion": "auto",
+    "soapAction": "urn:GetOrder",
+    "headers": [],
+    "args": {
+      "ORDER_ID": "1002"
+    },
+    "mtom": false,
+    "options": {
+      "timeoutSeconds": 60,
+      "followRedirects": false,
+      "insecure": false
+    },
+    "auth": {
+      "kind": "none",
+      "user": ""
+    },
+    "attachments": [],
+    "profile": "demo"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  // The profiles of the billing workspace. Edit this file by hand, or from the web UI (the Profiles page): the UI changes
+  // only the profile you edit and leaves everything else, these comments included, as it is.
+  //
+  // A relative path starts in THIS folder (workspaces/billing), so the workspace can be copied or moved as a whole:
+  // "templates/order.xml" is workspaces/billing/templates/order.xml.
+  // ${NAME} is read from secrets.env in this folder first, and then from the server's environment (soapcli.env).
+  "profiles": {
+
+    // What the others share. It is not meant to be used on its own.
+    "base": {
+      "soapVersion": "1.1",
+      "headers": { "X-Client": "soapcli-workspaces-example" },
+      "timeout": 60
+    },
+
+    // Works as it is: the `mock` service of docker-compose.yml answers it.
+    "demo": {
+      "extends": "base",
+      "endpoint": "http://mock:8081/soap",
+      "soapAction": "urn:GetOrder",
+      "requestFile": "templates/order.xml",
+      "args": { "ENV": "demo" }
+    },
+
+    // The same, with an attachment: the request refers to cid:invoice-1001 and the server reads the file.
+    "demo-upload": {
+      "extends": "demo",
+      "soapAction": "urn:UploadInvoice",
+      "requestFile": "templates/upload.xml",
+      "attachments": { "invoice-1001": "attachments/invoice-1001.pdf" }
+    },
+
+    // A service that asks for Basic authentication. user:password comes from ACC_CREDENTIALS in secrets.env.
+    "acceptance": {
+      "extends": "base",
+      "endpoint": "https://acceptance.example.com/soap",
+      "authBasic": "${ACC_CREDENTIALS}",
+      "args": { "ENV": "acceptance" }
+    },
+
+    // A service that asks for a client certificate (mutual TLS): put the keystore in certs/ (see the README there).
+    "production-mtls": {
+      "extends": "base",
+      "endpoint": "https://prod.example.com/soap",
+      "keystore": { "path": "certs/client.p12", "type": "PKCS12", "password": "${KEYSTORE_PASSWORD}" },
+      "args": { "ENV": "production" },
+      "timeout": 120
+    }
+  }
+}

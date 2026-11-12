@@ -1,0 +1,5 @@
+{
+  "placeholders": {
+    "PARCEL": { "description": "A parcel of the demo data set", "options": ["NL1234567890", "NL0987654321"] }
+  }
+}

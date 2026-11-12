@@ -1,0 +1,32 @@
+{
+  "app": "soapcli",
+  "version": 1,
+  "name": "Upload an invoice (demo)",
+  "folder": "Invoices",
+  "updatedAt": "2026-11-12T09:05:00Z",
+  "draft": {
+    "endpoint": "",
+    "body": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ord=\"http://example.com/orders\">\n  <soapenv:Header/>\n  <soapenv:Body>\n    <ord:UploadInvoice>\n      <ord:OrderId>___ORDER_ID:1001___</ord:OrderId>\n      <!-- payloadId is an attribute: it is not an attachment. The text of <ord:Data> is: cid:invoice-1001 is replaced by\n           the Base64 of the file (or sent as a MIME part, with MTOM). -->\n      <ord:Document payloadId=\"cid:invoice\" contentType=\"application/pdf\">\n        <ord:Data>cid:invoice-1001</ord:Data>\n      </ord:Document>\n    </ord:UploadInvoice>\n  </soapenv:Body>\n</soapenv:Envelope>\n",
+    "soapVersion": "auto",
+    "soapAction": "urn:UploadInvoice",
+    "headers": [],
+    "args": {},
+    "mtom": false,
+    "options": {
+      "timeoutSeconds": 60,
+      "followRedirects": false,
+      "insecure": false
+    },
+    "auth": {
+      "kind": "none",
+      "user": ""
+    },
+    "attachments": [
+      {
+        "cid": "invoice-1001",
+        "path": "invoice-1001.pdf"
+      }
+    ],
+    "profile": "demo"
+  }
+}
