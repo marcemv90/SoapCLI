@@ -7,12 +7,12 @@ import {
   type HistoryEntry, type SavedRequest, type Settings, type StoredDraft,
 } from "@/lib/storage";
 import {
-  ServerError, checkAttachment, fetchServerInfo, fetchServerProfiles, previewViaServer, sendViaServer,
-  type ServerInfo, type ServerProfiles,
+  ServerError, checkAttachment, fetchPlaceholders, fetchServerInfo, fetchServerProfiles, previewViaServer, sendViaServer,
+  type ServerInfo, type ServerPlaceholders, type ServerProfiles,
 } from "@/lib/transports/server";
 import { emptyDraft, newId, type RequestDraft, type RequestView, type ResponseView } from "@/lib/types";
 
-export type Page = "request" | "library" | "profiles" | "settings";
+export type Page = "request" | "library" | "profiles" | "placeholders" | "settings";
 
 export interface UiError {
   kind: "server" | "cancelled";
@@ -25,6 +25,11 @@ export interface UiError {
 export interface AttachmentLoad {
   items: LoadItem[];
   status: "running" | "failed";
+}
+
+/** Opens the Placeholders page on one placeholder: to give a new one its options, or to edit them. */
+export interface PlaceholderIntent {
+  name: string;
 }
 
 interface Workspace {
@@ -62,15 +67,19 @@ interface Workspace {
   settings: Settings;
   setSettings: (patch: Partial<Settings>) => void;
 
-  server: { info: ServerInfo | null; loaded: boolean; profiles: ServerProfiles | null };
-  refreshServer: () => void;
+  server: { info: ServerInfo | null; loaded: boolean; profiles: ServerProfiles | null; placeholders: ServerPlaceholders | null };
+  /** Asks the server again about itself, its profiles and its placeholders; resolves when the answer is in. */
+  refreshServer: () => Promise<void>;
+  /** Set to open the Placeholders page on one placeholder; that page clears it. */
+  placeholderIntent: PlaceholderIntent | null;
+  setPlaceholderIntent: (intent: PlaceholderIntent | null) => void;
 }
 
 const WorkspaceContext = createContext<Workspace | null>(null);
 
 function pageFromHash(): Page {
   const h = window.location.hash.replace(/^#\/?/, "");
-  return h === "library" || h === "profiles" || h === "settings" ? h : "request";
+  return h === "library" || h === "profiles" || h === "placeholders" || h === "settings" ? h : "request";
 }
 
 function newDraft(settings: Settings): RequestDraft {
@@ -103,7 +112,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [serverPreview, setServerPreview] = useState<RequestView | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadJson<HistoryEntry[]>(KEYS.history, []));
   const [saved, setSaved] = useState<SavedRequest[]>(() => loadJson<SavedRequest[]>(KEYS.saved, []));
-  const [server, setServer] = useState<Workspace["server"]>({ info: null, loaded: false, profiles: null });
+  const [server, setServer] = useState<Workspace["server"]>({ info: null, loaded: false, profiles: null, placeholders: null });
+  const [placeholderIntent, setPlaceholderIntent] = useState<PlaceholderIntent | null>(null);
   const controller = useRef<AbortController | null>(null);
 
   // ---- navigation (hash based, so the server needs no routing) --------------------------------------------------
@@ -128,20 +138,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // ---- the SoapCLI server this page came from -------------------------------------------------------------------
   const refreshServer = useCallback(() => {
-    void (async () => {
+    return (async () => {
       const info = await fetchServerInfo();
       let profiles: ServerProfiles | null = null;
+      let placeholders: ServerPlaceholders | null = null;
       if (info) {
-        try {
-          profiles = await fetchServerProfiles();
-        } catch {
-          profiles = null;
-        }
+        [profiles, placeholders] = await Promise.all([
+          fetchServerProfiles().catch(() => null),
+          fetchPlaceholders().catch(() => null),
+        ]);
       }
-      setServer({ info, loaded: true, profiles });
+      setServer({ info, loaded: true, profiles, placeholders });
     })();
   }, []);
-  useEffect(() => refreshServer(), [refreshServer]);
+  useEffect(() => void refreshServer(), [refreshServer]);
 
   // ---- draft ----------------------------------------------------------------------------------------------------
   const patch = useCallback((p: Partial<RequestDraft>) => setDraft((d) => ({ ...d, ...p })), []);
@@ -239,10 +249,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Workspace>(() => ({
     page, navigate, draft, patch, update, loadStored, resetDraft, response, error, sending, send, cancel, clearResult,
     attachmentLoad, dismissAttachmentLoad, serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
-    exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer,
+    exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer, placeholderIntent, setPlaceholderIntent,
   }), [page, navigate, draft, patch, update, loadStored, resetDraft, response, error, sending, send, cancel, clearResult,
     attachmentLoad, dismissAttachmentLoad, serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
-    exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer]);
+    exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer, placeholderIntent]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

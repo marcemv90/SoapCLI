@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { CodeEditor } from "@/components/common/CodeEditor";
+import { NativeSelect } from "@/components/common/controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { findCids } from "@/lib/cid";
 import { formatBytes } from "@/lib/format";
 import { findPlaceholders } from "@/lib/placeholders";
 import { detectSoapVersion } from "@/lib/soap";
-import { checkAttachment } from "@/lib/transports/server";
+import { checkAttachment, type PlaceholderEntry } from "@/lib/transports/server";
 import { newId, type AttachmentInput } from "@/lib/types";
 import { clean, prettyPrint } from "@/lib/xml";
 import { useWorkspace } from "@/state/workspace";
@@ -34,9 +35,57 @@ function Section({ title, count, hint, children }: { title: string; count: numbe
   );
 }
 
+const CUSTOM = "\u0000custom";
+
+/**
+ * A variable with options (from the placeholders file) is a dropdown: the request's own default, each option, and a way
+ * to type another value. Without options it is a text field.
+ */
+function VariableSelect({ name, entry, defaultValue, value, onChange }: {
+  name: string;
+  entry: PlaceholderEntry;
+  defaultValue: string;
+  value: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  const current = value ?? "";
+  // A value that is not one of the options is shown as custom; so is a custom value being typed, even while it is empty.
+  const [typing, setTyping] = useState(() => value !== undefined && !entry.options.some((o) => o.value === value));
+  const custom = typing || (value !== undefined && !entry.options.some((o) => o.value === value));
+  return (
+    <div className="flex flex-col gap-2">
+      <NativeSelect aria-label={`Value for ${name}`} className="w-full" value={custom ? CUSTOM : current}
+        onChange={(e) => {
+          if (e.target.value === CUSTOM) {
+            setTyping(true);
+          } else {
+            setTyping(false);
+            onChange(e.target.value);
+          }
+        }}>
+        <option value="">Default: {defaultValue || "(empty)"}</option>
+        {entry.options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label && o.label !== o.value ? `${o.label} (${o.value})` : o.value}</option>
+        ))}
+        <option value={CUSTOM}>Custom value…</option>
+      </NativeSelect>
+      {custom && <Input aria-label={`Custom value for ${name}`} placeholder="Type a value" value={current} onChange={(e) => onChange(e.target.value)} />}
+    </div>
+  );
+}
+
 function VariablesSection({ body }: { body: string }) {
-  const { draft, patch } = useWorkspace();
+  const { draft, patch, server, navigate, setPlaceholderIntent } = useWorkspace();
   const placeholders = useMemo(() => findPlaceholders(body), [body]);
+  const known = server.placeholders;
+  const optionsOf = (name: string) => {
+    const entry = known?.placeholders.find((p) => p.name === name);
+    return entry && !entry.error && entry.options.length > 0 ? entry : undefined;
+  };
+  const manage = (name: string) => {
+    setPlaceholderIntent({ name });
+    navigate("placeholders");
+  };
   const set = (name: string, value: string) => {
     const args = { ...draft.args };
     if (value === "") delete args[name];
@@ -52,16 +101,31 @@ function VariablesSection({ body }: { body: string }) {
       {placeholders.length > 0 && (
         <p className="text-xs text-gray-500 dark:text-gray-400">Leave a value empty to use the default written in the request.</p>
       )}
-      {placeholders.map((p) => (
-        <div key={p.name} className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
-          <code className="truncate text-sm font-medium text-gray-800 dark:text-white/90" title={p.name}>{p.name}</code>
-          <Input aria-label={`Value for ${p.name}`} placeholder={p.defaultValue || "(empty)"} value={draft.args[p.name] ?? ""}
-            onChange={(e) => set(p.name, e.target.value)} />
-          <Badge variant="light" color="gray" size="sm" className="justify-self-start">
-            {draft.args[p.name] !== undefined ? "custom" : "default"}
-          </Badge>
-        </div>
-      ))}
+      {placeholders.map((p) => {
+        const entry = optionsOf(p.name);
+        return (
+          <div key={p.name} className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
+            <code className="truncate pt-3 text-sm font-medium text-gray-800 dark:text-white/90" title={p.name}>{p.name}</code>
+            <div className="flex min-w-0 flex-col gap-1">
+              {entry ? (
+                <VariableSelect name={p.name} entry={entry} defaultValue={p.defaultValue} value={draft.args[p.name]} onChange={(v) => set(p.name, v)} />
+              ) : (
+                <Input aria-label={`Value for ${p.name}`} placeholder={p.defaultValue || "(empty)"} value={draft.args[p.name] ?? ""}
+                  onChange={(e) => set(p.name, e.target.value)} />
+              )}
+              {entry?.description && <p className="text-xs text-gray-500 dark:text-gray-400">{entry.description}</p>}
+              {known?.editable && (
+                <button type="button" onClick={() => manage(p.name)} className="w-fit text-xs font-medium text-brand-500 hover:underline dark:text-brand-400">
+                  {entry ? "Edit the options" : "Give it options"}
+                </button>
+              )}
+            </div>
+            <Badge variant="light" color="gray" size="sm" className="mt-2.5 justify-self-start">
+              {draft.args[p.name] !== undefined ? "custom" : "default"}
+            </Badge>
+          </div>
+        );
+      })}
     </Section>
   );
 }

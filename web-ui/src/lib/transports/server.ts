@@ -22,6 +22,9 @@ export interface ServerInfo {
   profilesFile?: string;
   /** The only folder a request may attach files from, by path. */
   attachmentsDir: string;
+  placeholdersFile: string;
+  /** Whether the server lets the UI change the profiles and placeholders files (they may still be read-only). */
+  configEditAllowed: boolean;
 }
 
 /** What the server found at an attachment path. */
@@ -44,7 +47,48 @@ export interface ServerProfiles {
   file: string;
   found: boolean;
   error?: string;
+  /** Identifies the content of the file: a change has to quote the one it was made from. */
+  revision: string;
+  editable: boolean;
+  readOnlyReason?: string;
   profiles: ServerProfile[];
+}
+
+/** A profile as it is in the file, not merged with what it extends, with secrets shown as `****`. */
+export interface ProfileDefinition {
+  name: string;
+  revision: string;
+  definition: Record<string, unknown>;
+  /** The profiles that inherit from this one. */
+  dependents: string[];
+}
+
+export interface SaveResult {
+  revision: string;
+  warnings: string[];
+}
+
+export interface PlaceholderOption {
+  value: string;
+  /** What the dropdown shows; the value itself when absent. */
+  label?: string;
+}
+
+export interface PlaceholderEntry {
+  name: string;
+  description?: string;
+  options: PlaceholderOption[];
+  error?: string;
+}
+
+export interface ServerPlaceholders {
+  file: string;
+  found: boolean;
+  error?: string;
+  revision: string;
+  editable: boolean;
+  readOnlyReason?: string;
+  placeholders: PlaceholderEntry[];
 }
 
 interface ApiNameValue {
@@ -122,6 +166,22 @@ export async function fetchServerInfo(): Promise<ServerInfo | null> {
 }
 
 export const fetchServerProfiles = () => api<ServerProfiles>("profiles");
+export const fetchPlaceholders = () => api<ServerPlaceholders>("placeholders");
+
+export const fetchProfileDefinition = (name: string) =>
+  api<ProfileDefinition>(`profiles/${encodeURIComponent(name)}/definition`);
+
+/** Creates a profile, or replaces its definition. A secret left as `****` keeps the saved value. */
+export const saveProfile = (body: { name: string; revision: string; create: boolean; definition: Record<string, unknown> }) =>
+  api<SaveResult>("profiles/save", { json: body });
+
+export const deleteProfile = (name: string, revision: string) => api<SaveResult>("profiles/delete", { json: { name, revision } });
+
+export const savePlaceholder = (body: { name: string; revision: string; create: boolean; description: string; options: PlaceholderOption[] }) =>
+  api<SaveResult>("placeholders/save", { json: body });
+
+export const deletePlaceholder = (name: string, revision: string) =>
+  api<SaveResult>("placeholders/delete", { json: { name, revision } });
 
 export async function fetchProfileRequest(name: string): Promise<string> {
   let response: Response;

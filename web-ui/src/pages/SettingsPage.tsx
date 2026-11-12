@@ -77,6 +77,14 @@ export function SettingsPage() {
             <Row label="Destinations">{info.allowedHosts.length === 0 ? "any host" : info.allowedHosts.join(", ")}</Row>
             <Row label="Skip TLS checks">{info.insecureTlsAllowed ? "allowed" : "disabled"}</Row>
             <Row label="Largest request">{formatBytes(info.maxBodyBytes)}</Row>
+            <Row label="Placeholders file">
+              <span className="break-all font-mono text-xs">{info.placeholdersFile}</span>
+              {" "}
+              <button type="button" onClick={() => navigate("placeholders")} className="font-medium text-brand-500 hover:underline dark:text-brand-400">View</button>
+            </Row>
+            <Row label="Editing profiles and placeholders">
+              {!info.configEditAllowed ? "off on this server" : server.profiles?.editable === false ? "allowed, but the files are read-only" : "allowed"}
+            </Row>
             <Row label="Attachments folder"><span className="break-all font-mono text-xs">{info.attachmentsDir}</span></Row>
             <Row label="Profiles file">{info.profilesFileFound ? info.profilesFile : "none found"}</Row>
             <Row label="Profiles">

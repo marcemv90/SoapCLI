@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { CodeIcon, FolderIcon, GearIcon, MenuTwoIcon, MoonIcon, SunIcon, TagIcon, XIcon } from "@/icons";
+import { CodeIcon, FolderIcon, GearIcon, ListIcon, MenuTwoIcon, MoonIcon, SunIcon, TagIcon, XIcon } from "@/icons";
 import { useTheme } from "@/state/theme";
 import { useWorkspace, type Page } from "@/state/workspace";
 import { cn } from "@/utils";
@@ -9,10 +9,13 @@ const NAV: { page: Page; label: string; icon: ReactNode }[] = [
   { page: "request", label: "Request", icon: <CodeIcon /> },
   { page: "library", label: "Library", icon: <FolderIcon /> },
   { page: "profiles", label: "Profiles", icon: <TagIcon /> },
+  { page: "placeholders", label: "Placeholders", icon: <ListIcon /> },
   { page: "settings", label: "Settings", icon: <GearIcon /> },
 ];
 
-const TITLES: Record<Page, string> = { request: "Request", library: "Library", profiles: "Profiles", settings: "Settings" };
+const TITLES: Record<Page, string> = {
+  request: "Request", library: "Library", profiles: "Profiles", placeholders: "Placeholders", settings: "Settings",
+};
 
 function Logo() {
   return (
