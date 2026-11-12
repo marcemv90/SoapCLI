@@ -517,6 +517,435 @@ class WebServerTest {
         assertEquals(dir.toString(), JSON.readTree(get(s, "/api/info").body()).get("attachmentsDir").asText());
     }
 
+    // ---- editing profiles and placeholder options ---------------------------------------------------------------------
+
+    private static final String PROFILES_TEXT = String.join("\n",
+            "{",
+            "  // my environments",
+            "  \"profiles\": {",
+            "    /* shared */",
+            "    \"base\": { \"soapVersion\": \"1.1\", \"headers\": { \"X-Client\": \"soapcli\" } },",
+            "",
+            "    // day to day",
+            "    \"acc\": {",
+            "      \"extends\": \"base\",",
+            "      \"endpoint\": \"https://acc.example.com/soap\",",
+            "      \"authBasic\": \"alice:topsecret\"",
+            "    }",
+            "  }",
+            "}",
+            "");
+
+    private WebServer startWithFiles(Path profiles, Path placeholders, String... args) throws IOException {
+        Map<String, String> env = new HashMap<>();
+        env.put("SOAPCLI_PROFILE_FILE", profiles.toString());
+        env.put("SOAPCLI_PLACEHOLDERS_FILE", placeholders.toString());
+        return start(env, args);
+    }
+
+    private HttpResponse<String> postSave(WebServer s, String path, Object body) throws Exception {
+        return post(s, path, "application/json", JSON.writeValueAsString(body));
+    }
+
+    private static Map<String, Object> saveBody(String name, String revision, boolean create, String definitionJson) throws Exception {
+        Map<String, Object> m = new HashMap<>();
+        m.put("name", name);
+        m.put("revision", revision);
+        m.put("create", create);
+        m.put("definition", JSON.readTree(definitionJson));
+        return m;
+    }
+
+    private JsonNode getJson(WebServer s, String path) throws Exception {
+        return JSON.readTree(get(s, path).body());
+    }
+
+    @Test
+    void aProfileCanBeEditedWithoutDisturbingTheRestOfTheFile() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, PROFILES_TEXT);
+        WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+
+        JsonNode list = getJson(s, "/api/profiles");
+        assertTrue(list.get("editable").asBoolean(), list.toString());
+        String r0 = list.get("revision").asText();
+
+        JsonNode def = getJson(s, "/api/profiles/acc/definition");
+        assertEquals(r0, def.get("revision").asText());
+        assertEquals("****", def.get("definition").get("authBasic").asText(), "the browser never gets the secret");
+        assertEquals("base", def.get("definition").get("extends").asText());
+        assertFalse(def.get("definition").has("soapVersion"), "inherited values are not copied in");
+        assertEquals("acc", getJson(s, "/api/profiles/base/definition").get("dependents").get(0).asText());
+        assertFalse(def.toString().contains("topsecret"));
+
+        // change the endpoint and leave the secret masked: the saved secret stays
+        HttpResponse<String> saved = postSave(s, "/api/profiles/save", saveBody("acc", r0, false,
+                "{\"extends\":\"base\",\"endpoint\":\"https://changed.example.com/soap\",\"authBasic\":\"****\",\"timeout\":45}"));
+        assertEquals(200, saved.statusCode(), saved.body());
+        String r1 = JSON.readTree(saved.body()).get("revision").asText();
+        assertFalse(r1.equals(r0));
+        String text = Files.readString(file);
+        assertTrue(text.contains("// my environments") && text.contains("/* shared */") && text.contains("// day to day"), text);
+        assertTrue(text.contains("\"authBasic\": \"alice:topsecret\""), "the secret was kept: " + text);
+        assertTrue(text.contains("https://changed.example.com/soap") && text.contains("\"timeout\": 45"), text);
+        assertTrue(text.contains("\"base\": { \"soapVersion\": \"1.1\", \"headers\": { \"X-Client\": \"soapcli\" } },"), "other profiles are byte for byte the same: " + text);
+        assertEquals(r1, getJson(s, "/api/profiles").get("revision").asText());
+
+        // typing a new secret replaces it
+        assertEquals(200, postSave(s, "/api/profiles/save", saveBody("acc", r1, false,
+                "{\"extends\":\"base\",\"authBasic\":\"bob:newsecret\"}")).statusCode());
+        assertTrue(Files.readString(file).contains("bob:newsecret") && !Files.readString(file).contains("topsecret"));
+    }
+
+    @Test
+    void aStaleFormDoesNotOverwriteWhatChangedMeanwhile() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, PROFILES_TEXT);
+        WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+        String revision = getJson(s, "/api/profiles").get("revision").asText();
+
+        Files.writeString(file, PROFILES_TEXT.replace("// day to day", "// edited by hand meanwhile"));
+        String edited = Files.readString(file);
+        HttpResponse<String> r = postSave(s, "/api/profiles/save", saveBody("acc", revision, false, "{\"endpoint\":\"http://x\"}"));
+        assertEquals(409, r.statusCode(), r.body());
+        assertEquals("conflict", JSON.readTree(r.body()).get("error").get("category").asText());
+        assertEquals(edited, Files.readString(file), "nothing was written");
+        assertEquals(409, postSave(s, "/api/profiles/delete", Map.of("name", "acc", "revision", revision)).statusCode());
+    }
+
+    @Test
+    void profilesCanBeCreatedAndDeleted() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, PROFILES_TEXT);
+        WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+        String revision = getJson(s, "/api/profiles").get("revision").asText();
+
+        HttpResponse<String> created = postSave(s, "/api/profiles/save", saveBody("staging", revision, true,
+                "{\"extends\":\"base\",\"endpoint\":\"https://staging.example.com\",\"headers\":{\"X-Env\":\"staging\"}}"));
+        assertEquals(200, created.statusCode(), created.body());
+        revision = JSON.readTree(created.body()).get("revision").asText();
+        assertEquals(3, getJson(s, "/api/profiles").get("profiles").size());
+        assertEquals("staging", getJson(s, "/api/profiles").get("profiles").get(2).get("name").asText());
+
+        HttpResponse<String> again = postSave(s, "/api/profiles/save", saveBody("staging", revision, true, "{}"));
+        assertEquals(409, again.statusCode(), "a name that exists cannot be created again: " + again.body());
+        assertEquals(400, postSave(s, "/api/profiles/save", saveBody("bad name!", revision, true, "{}")).statusCode());
+        assertEquals(404, postSave(s, "/api/profiles/save", saveBody("ghost", revision, false, "{}")).statusCode());
+
+        HttpResponse<String> blocked = postSave(s, "/api/profiles/delete", Map.of("name", "base", "revision", revision));
+        assertEquals(409, blocked.statusCode());
+        assertTrue(blocked.body().contains("acc") && blocked.body().contains("staging"), "says who extends it: " + blocked.body());
+
+        HttpResponse<String> deleted = postSave(s, "/api/profiles/delete", Map.of("name", "staging", "revision", revision));
+        assertEquals(200, deleted.statusCode(), deleted.body());
+        String text = Files.readString(file);
+        assertFalse(text.contains("staging"));
+        assertTrue(text.contains("// day to day"));
+        assertEquals(2, getJson(s, "/api/profiles").get("profiles").size());
+    }
+
+    @Test
+    void aBadProfileIsRefusedAndTheFileIsLeftAlone() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, PROFILES_TEXT);
+        WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+        String revision = getJson(s, "/api/profiles").get("revision").asText();
+
+        HttpResponse<String> badType = postSave(s, "/api/profiles/save", saveBody("acc", revision, false, "{\"timeout\":\"soon\"}"));
+        assertEquals(400, badType.statusCode());
+        assertTrue(badType.body().contains("whole number"), badType.body());
+
+        HttpResponse<String> loop = postSave(s, "/api/profiles/save", saveBody("base", revision, false, "{\"extends\":\"acc\"}"));
+        assertEquals(400, loop.statusCode(), "base extending acc, which extends base: " + loop.body());
+
+        HttpResponse<String> shape = postSave(s, "/api/profiles/save", saveBody("base", revision, false, "{\"headers\":\"not an object\"}"));
+        assertEquals(400, shape.statusCode());
+        assertTrue(shape.body().contains("'headers' must be an object"), shape.body());
+
+        assertEquals(400, postSave(s, "/api/profiles/save", saveBody("acc", revision, false, "[1]")).statusCode());
+        assertEquals(400, postSave(s, "/api/profiles/save", saveBody("acc", revision, false, "{\"authBasic\":\"****\",\"proxy\":{\"password\":\"****\"}}")).statusCode(),
+                "a masked secret with nothing saved to keep");
+        assertEquals(PROFILES_TEXT, Files.readString(file));
+    }
+
+    @Test
+    void aProfileThatWasAlreadyBrokenDoesNotBlockEditingWhatItExtends() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, "{\"profiles\":{\"base\":{\"soapVersion\":\"1.1\"},\"broken\":{\"extends\":\"base\",\"timeout\":\"soon\"}}}");
+        WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+        JsonNode list = getJson(s, "/api/profiles");
+        assertEquals(200, postSave(s, "/api/profiles/save", saveBody("base", list.get("revision").asText(), false,
+                "{\"soapVersion\":\"1.2\"}")).statusCode(), "base is fine, whatever its heirs are");
+        assertTrue(Files.readString(file).contains("\"soapVersion\": \"1.2\""));
+    }
+
+    @Test
+    void warningsAboutIgnoredSettingsAndUncheckedVariablesAreReturned() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, PROFILES_TEXT);
+        WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+        String revision = getJson(s, "/api/profiles").get("revision").asText();
+        JsonNode r = JSON.readTree(postSave(s, "/api/profiles/save", saveBody("acc", revision, false,
+                "{\"extends\":\"base\",\"timeot\":3,\"timeout\":\"${SOAPCLI_TEST_NOT_SET_ANYWHERE}\"}")).body());
+        String warnings = r.get("warnings").toString();
+        assertTrue(warnings.contains("SOAPCLI_TEST_NOT_SET_ANYWHERE") && warnings.contains("could not be checked"), warnings);
+        assertEquals(2, JsonSplice_count(Files.readString(file)), "it was saved all the same");
+    }
+
+    private static int JsonSplice_count(String text) {
+        return io.github.marcemv90.soapcli.core.JsonSplice.parse(text).get("profiles").size();
+    }
+
+    @Test
+    void theFileIsCreatedWhenThereIsNoneYet() throws Exception {
+        Path file = tmp.resolve("sub").resolve("profiles.json");
+        WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+        JsonNode list = getJson(s, "/api/profiles");
+        assertFalse(list.get("found").asBoolean());
+        assertEquals("missing", list.get("revision").asText());
+        assertTrue(list.get("editable").asBoolean(), "it can be created: " + list);
+
+        HttpResponse<String> r = postSave(s, "/api/profiles/save", saveBody("first", "missing", true, "{\"endpoint\":\"http://x\"}"));
+        assertEquals(200, r.statusCode(), r.body());
+        assertTrue(Files.isRegularFile(file));
+        assertEquals("http://x", io.github.marcemv90.soapcli.core.JsonSplice.parse(Files.readString(file)).get("profiles").get("first").get("endpoint").asText());
+        assertTrue(getJson(s, "/api/profiles").get("found").asBoolean());
+        try {
+            assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(file)),
+                    "a new profiles file is private to its owner");
+        } catch (UnsupportedOperationException ignored) {
+            // not POSIX
+        }
+    }
+
+    @Test
+    void theFilesPermissionsAndSymbolicLinkSurviveAnEdit() throws Exception {
+        Path real = tmp.resolve("real-profiles.json");
+        Files.writeString(real, PROFILES_TEXT);
+        Path link = tmp.resolve("link-profiles.json");
+        try {
+            Files.setPosixFilePermissions(real, java.nio.file.attribute.PosixFilePermissions.fromString("rw-r-----"));
+            Files.createSymbolicLink(link, real);
+        } catch (IOException | UnsupportedOperationException e) {
+            org.junit.jupiter.api.Assumptions.abort("POSIX permissions and symbolic links are not available here: " + e);
+        }
+        WebServer s = startWithFiles(link, tmp.resolve("placeholders.json"));
+        String revision = getJson(s, "/api/profiles").get("revision").asText();
+        assertEquals(200, postSave(s, "/api/profiles/save", saveBody("acc", revision, false, "{\"endpoint\":\"http://moved\"}")).statusCode());
+        assertTrue(Files.isSymbolicLink(link), "the link is still a link");
+        assertTrue(Files.readString(real).contains("http://moved"), "the file it points to was changed");
+        assertEquals("rw-r-----", java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(real)));
+    }
+
+    @Test
+    void editingFollowsTheServersPermission() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, PROFILES_TEXT);
+        Path none = tmp.resolve("placeholders.json");
+
+        // listening on a network address: off unless allowed
+        WebServer network = startWithFiles(file, none, "--host", "0.0.0.0");
+        JsonNode list = getJson(network, "/api/profiles");
+        assertFalse(list.get("editable").asBoolean());
+        assertTrue(list.get("readOnlyReason").asText().contains("--allow-config-edit"), list.toString());
+        String revision = list.get("revision").asText();
+        HttpResponse<String> refused = postSave(network, "/api/profiles/save", saveBody("acc", revision, false, "{\"endpoint\":\"http://evil\"}"));
+        assertEquals(403, refused.statusCode(), refused.body());
+        assertEquals(403, postSave(network, "/api/profiles/delete", Map.of("name", "acc", "revision", revision)).statusCode());
+        assertEquals(403, postSave(network, "/api/placeholders/save", Map.of("name", "ENV", "revision", "missing", "create", true,
+                "options", List.of(Map.of("value", "a")))).statusCode());
+        assertEquals(PROFILES_TEXT, Files.readString(file));
+        assertFalse(getJson(network, "/api/info").get("configEditAllowed").asBoolean());
+
+        // ... allowed explicitly
+        WebServer allowed = startWithFiles(file, none, "--host", "0.0.0.0", "--allow-config-edit");
+        assertTrue(getJson(allowed, "/api/profiles").get("editable").asBoolean());
+        assertTrue(getJson(allowed, "/api/info").get("configEditAllowed").asBoolean());
+
+        // on this machine, but switched off
+        WebServer off = startWithFiles(file, none, "--no-config-edit");
+        assertFalse(getJson(off, "/api/profiles").get("editable").asBoolean());
+        assertEquals(403, postSave(off, "/api/profiles/save", saveBody("acc", revision, false, "{}")).statusCode());
+    }
+
+    @Test
+    void aReadOnlyFileCannotBeEdited() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, PROFILES_TEXT);
+        file.toFile().setWritable(false);
+        org.junit.jupiter.api.Assumptions.assumeFalse(Files.isWritable(file), "this user can write to read-only files (root?)");
+        try {
+            WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+            JsonNode list = getJson(s, "/api/profiles");
+            assertFalse(list.get("editable").asBoolean());
+            assertTrue(list.get("readOnlyReason").asText().contains("read-only"), list.toString());
+            assertEquals(403, postSave(s, "/api/profiles/save", saveBody("acc", list.get("revision").asText(), false, "{}")).statusCode());
+            assertEquals(2, list.get("profiles").size(), "it can still be read");
+        } finally {
+            file.toFile().setWritable(true);
+        }
+    }
+
+    @Test
+    void aBrokenFileIsReportedAndNotEdited() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, "{ \"profiles\": { \"a\": ");
+        WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+        JsonNode list = getJson(s, "/api/profiles");
+        assertTrue(list.has("error"));
+        assertFalse(list.get("editable").asBoolean());
+        assertTrue(list.get("readOnlyReason").asText().contains("fix it by hand"));
+        HttpResponse<String> r = postSave(s, "/api/profiles/save", saveBody("b", list.get("revision").asText(), true, "{}"));
+        assertEquals(400, r.statusCode(), r.body());
+        assertEquals("{ \"profiles\": { \"a\": ", Files.readString(file));
+    }
+
+    @Test
+    void editingEndpointsOnlyTakeJsonPosts() throws Exception {
+        Path file = tmp.resolve("profiles.json");
+        Files.writeString(file, PROFILES_TEXT);
+        WebServer s = startWithFiles(file, tmp.resolve("placeholders.json"));
+        for (String path : new String[]{"/api/profiles/save", "/api/profiles/delete", "/api/placeholders/save", "/api/placeholders/delete"}) {
+            assertEquals(415, post(s, path, "text/plain", "{}").statusCode(), path + ": a cross-site form post cannot change the files");
+            assertEquals(405, get(s, path).statusCode(), path);
+        }
+        assertEquals(405, post(s, "/api/placeholders", "application/json", "{}").statusCode());
+        assertEquals(404, get(s, "/api/profiles/ghost/definition").statusCode());
+        assertEquals(PROFILES_TEXT, Files.readString(file));
+    }
+
+    private static final String PLACEHOLDERS_TEXT = String.join("\n",
+            "{",
+            "  // what the dropdowns offer",
+            "  \"placeholders\": {",
+            "    \"ENV\": { \"options\": [\"acceptance\", \"staging\", { \"value\": \"production\", \"label\": \"Production (careful)\" }] },",
+            "    \"BAD\": { \"options\": \"not a list\" },",
+            "    \"COUNT\": { \"description\": \"How many\", \"options\": [1, 2, 3] }",
+            "  }",
+            "}",
+            "");
+
+    @Test
+    void placeholderOptionsAreReadFromTheirOwnFile() throws Exception {
+        Path file = tmp.resolve("placeholders.json");
+        Files.writeString(file, PLACEHOLDERS_TEXT);
+        WebServer s = startWithFiles(tmp.resolve("profiles.json"), file);
+        JsonNode r = getJson(s, "/api/placeholders");
+        assertTrue(r.get("found").asBoolean());
+        assertTrue(r.get("editable").asBoolean());
+        assertEquals(3, r.get("placeholders").size());
+        JsonNode env = r.get("placeholders").get(0);
+        assertEquals("ENV", env.get("name").asText());
+        assertEquals("acceptance", env.get("options").get(0).get("value").asText());
+        assertNull(env.get("options").get(0).get("label"));
+        assertEquals("Production (careful)", env.get("options").get(2).get("label").asText());
+        JsonNode bad = r.get("placeholders").get(1);
+        assertTrue(bad.get("error").asText().contains("options"), "one bad entry is reported on its own: " + bad);
+        assertEquals(0, bad.get("options").size());
+        JsonNode count = r.get("placeholders").get(2);
+        assertEquals("How many", count.get("description").asText());
+        assertEquals("2", count.get("options").get(1).get("value").asText(), "numbers become text");
+
+        assertEquals(getJson(s, "/api/info").get("placeholdersFile").asText(), file.toString());
+    }
+
+    @Test
+    void placeholderOptionsCanBeCreatedChangedAndRemoved() throws Exception {
+        Path file = tmp.resolve("placeholders.json");
+        Files.writeString(file, PLACEHOLDERS_TEXT);
+        WebServer s = startWithFiles(tmp.resolve("profiles.json"), file);
+        String revision = getJson(s, "/api/placeholders").get("revision").asText();
+
+        Map<String, Object> create = new HashMap<>();
+        create.put("name", "COUNTRY");
+        create.put("revision", revision);
+        create.put("create", true);
+        create.put("description", "  Country code ");
+        create.put("options", List.of(Map.of("value", "ES", "label", "Spain"), Map.of("value", "NL"), Map.of("value", "DE", "label", "DE")));
+        HttpResponse<String> created = postSave(s, "/api/placeholders/save", create);
+        assertEquals(200, created.statusCode(), created.body());
+        revision = JSON.readTree(created.body()).get("revision").asText();
+        String text = Files.readString(file);
+        assertTrue(text.contains("// what the dropdowns offer"), "comments stay: " + text);
+        assertTrue(text.contains("\"description\": \"Country code\""), text);
+        assertTrue(text.contains("\"value\": \"ES\"") && text.contains("\"label\": \"Spain\""), text);
+        assertTrue(text.contains("\"NL\"") && !text.contains("\"label\": \"DE\""), "a label equal to the value is not written: " + text);
+
+        JsonNode country = getJson(s, "/api/placeholders").get("placeholders").get(3);
+        assertEquals("COUNTRY", country.get("name").asText());
+        assertEquals("Spain", country.get("options").get(0).get("label").asText());
+
+        // change ENV: what else is in its entry (a note of the author's) is kept
+        Files.writeString(file, text.replace("\"ENV\": { \"options\"", "\"ENV\": { \"note\": \"keep me\", \"options\""));
+        revision = getJson(s, "/api/placeholders").get("revision").asText();
+        Map<String, Object> edit = new HashMap<>();
+        edit.put("name", "ENV");
+        edit.put("revision", revision);
+        edit.put("options", List.of(Map.of("value", "dev"), Map.of("value", "prod")));
+        HttpResponse<String> edited = postSave(s, "/api/placeholders/save", edit);
+        assertEquals(200, edited.statusCode(), edited.body());
+        revision = JSON.readTree(edited.body()).get("revision").asText();
+        assertTrue(Files.readString(file).contains("keep me"));
+        assertEquals("dev", getJson(s, "/api/placeholders").get("placeholders").get(0).get("options").get(0).get("value").asText());
+
+        HttpResponse<String> deleted = postSave(s, "/api/placeholders/delete", Map.of("name", "BAD", "revision", revision));
+        assertEquals(200, deleted.statusCode(), deleted.body());
+        assertFalse(Files.readString(file).contains("not a list"));
+        assertEquals(3, getJson(s, "/api/placeholders").get("placeholders").size());
+        assertEquals(404, postSave(s, "/api/placeholders/delete", Map.of("name", "BAD", "revision", JSON.readTree(deleted.body()).get("revision").asText())).statusCode());
+    }
+
+    @Test
+    void badPlaceholderOptionsAreRefused() throws Exception {
+        Path file = tmp.resolve("placeholders.json");
+        Files.writeString(file, PLACEHOLDERS_TEXT);
+        WebServer s = startWithFiles(tmp.resolve("profiles.json"), file);
+        String revision = getJson(s, "/api/placeholders").get("revision").asText();
+
+        for (Object[] c : new Object[][]{
+                {"NEW", List.of(), "at least one option"},
+                {"NEW", List.of(Map.of("value", "a"), Map.of("value", "a")), "listed twice"},
+                {"NEW", List.of(Map.of("value", "")), "cannot be empty"},
+                {"1bad", List.of(Map.of("value", "a")), "does not start with a digit"},
+                {"has space", List.of(Map.of("value", "a")), "letters, digits"},
+        }) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("name", c[0]);
+            body.put("revision", revision);
+            body.put("create", true);
+            body.put("options", c[1]);
+            HttpResponse<String> r = postSave(s, "/api/placeholders/save", body);
+            assertEquals(400, r.statusCode(), c[0] + " " + r.body());
+            assertTrue(r.body().contains((String) c[2]), c[0] + " -> " + r.body());
+        }
+        Map<String, Object> dup = new HashMap<>();
+        dup.put("name", "ENV");
+        dup.put("revision", revision);
+        dup.put("create", true);
+        dup.put("options", List.of(Map.of("value", "x")));
+        assertEquals(409, postSave(s, "/api/placeholders/save", dup).statusCode(), "ENV already has options");
+        dup.put("revision", "stale");
+        assertEquals(409, postSave(s, "/api/placeholders/save", dup).statusCode());
+        assertEquals(PLACEHOLDERS_TEXT, Files.readString(file));
+    }
+
+    @Test
+    void thePlaceholdersFileMayNotExistYet() throws Exception {
+        Path file = tmp.resolve("placeholders.json");
+        WebServer s = startWithFiles(tmp.resolve("profiles.json"), file);
+        JsonNode r = getJson(s, "/api/placeholders");
+        assertFalse(r.get("found").asBoolean());
+        assertEquals(0, r.get("placeholders").size());
+        assertTrue(r.get("editable").asBoolean());
+        Map<String, Object> body = new HashMap<>();
+        body.put("name", "ENV");
+        body.put("revision", r.get("revision").asText());
+        body.put("create", true);
+        body.put("options", List.of(Map.of("value", "a")));
+        assertEquals(200, postSave(s, "/api/placeholders/save", body).statusCode());
+        assertEquals("a", getJson(s, "/api/placeholders").get("placeholders").get(0).get("options").get(0).get("value").asText());
+    }
+
     private int tempDirs() throws IOException {
         try (Stream<Path> list = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
             return (int) list.filter(p -> p.getFileName().toString().startsWith("soapcli-web-")).count();

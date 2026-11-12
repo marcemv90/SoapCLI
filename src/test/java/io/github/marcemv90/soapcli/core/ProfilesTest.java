@@ -201,4 +201,89 @@ class ProfilesTest {
         assertEquals(Paths.get("/x/p.json"), Profiles.defaultFile(Collections.singletonMap("SOAPCLI_PROFILE_FILE", "/x/p.json"), "/h"));
         assertEquals(Paths.get("soap-cli-profiles.json"), Profiles.defaultFile(Collections.emptyMap(), ""));
     }
+
+    // ---- editing support -------------------------------------------------------------------------------------------
+
+    private static final String EDITABLE = "{\"profiles\":{"
+            + "\"base\":{\"soapVersion\":\"1.1\",\"headers\":{\"X-Api-Key\":\"k-123\",\"X-A\":\"1\"},\"proxy\":{\"host\":\"px\",\"password\":\"${PX_PW}\"}},"
+            + "\"acc\":{\"extends\":\"base\",\"endpoint\":\"http://acc\",\"authBasic\":\"alice:topsecret\",\"proxy\":null,\"mystery\":42},"
+            + "\"acc2\":{\"extends\":\"acc\"},"
+            + "\"other\":{}}}";
+
+    @Test
+    void theOwnDefinitionIsNotMergedAndHasNoSecrets() throws IOException {
+        Profiles p = profiles(EDITABLE);
+        JsonNode own = p.own("acc");
+        assertEquals("base", own.get("extends").asText());
+        assertEquals("http://acc", own.get("endpoint").asText());
+        assertFalse(own.has("soapVersion"), "what is inherited is not copied in");
+        assertEquals("****", own.get("authBasic").asText());
+        assertTrue(own.has("proxy") && own.get("proxy").isNull(), "null (remove the inherited value) is kept");
+        assertEquals(42, own.get("mystery").asInt(), "unknown settings are kept");
+        JsonNode base = p.own("base");
+        assertEquals("****", base.get("headers").get("X-Api-Key").asText(), "a secret header is masked too");
+        assertEquals("1", base.get("headers").get("X-A").asText());
+        assertEquals("${PX_PW}", base.get("proxy").get("password").asText(), "a ${VAR} reference is not a secret");
+        assertEquals("alice:topsecret", p.ownUnmasked("acc").get("authBasic").asText());
+        assertTrue(p.has("acc") && !p.has("nope"));
+    }
+
+    @Test
+    void theProfilesThatInheritAreFoundThroughTheChain() throws IOException {
+        Profiles p = profiles(EDITABLE);
+        assertEquals(Arrays.asList("acc", "acc2"), p.dependents("base"));
+        assertEquals(Arrays.asList("acc2"), p.dependents("acc"));
+        assertTrue(p.dependents("other").isEmpty());
+        assertTrue(p.dependents("acc2").isEmpty());
+    }
+
+    @Test
+    void validatingChecksTypesAndMergesAndReportsWhatIsIgnored() throws IOException {
+        Profiles p = profiles("{\"profiles\":{\"a\":{\"timeout\":\"abc\"},\"b\":{\"timoeut\":3},\"c\":{\"extends\":\"zzz\"},"
+                + "\"d\":{\"extends\":\"e\"},\"e\":{\"extends\":\"d\"},\"f\":{\"timeout\":\"${T}\"},\"g\":{\"timeout\":\"${T:-30}\"}}}");
+        ConfigException typed = assertThrows(ConfigException.class, () -> p.validate("a", Collections.emptyMap()));
+        assertTrue(typed.getMessage().contains("whole number"), typed.getMessage());
+        assertEquals(1, p.validate("b", Collections.emptyMap()).size());
+        assertTrue(p.validate("b", Collections.emptyMap()).get(0).contains("timoeut"));
+        assertThrows(ConfigException.class, () -> p.validate("c", Collections.emptyMap()));
+        assertThrows(ConfigException.class, () -> p.validate("d", Collections.emptyMap()));
+        // a variable that this machine does not have is not a reason to refuse: it is only said that it was not checked
+        java.util.List<String> unchecked = p.validate("f", Collections.emptyMap());
+        assertEquals(1, unchecked.size());
+        assertTrue(unchecked.get(0).contains("'T' is not set") && unchecked.get(0).contains("could not be checked"), unchecked.get(0));
+        assertTrue(p.validate("f", Collections.singletonMap("T", "30")).isEmpty());
+        assertThrows(ConfigException.class, () -> p.validate("f", Collections.singletonMap("T", "thirty")));
+        assertTrue(p.validate("g", Collections.emptyMap()).isEmpty());
+    }
+
+    @Test
+    void aMaskedSecretKeepsWhatIsSavedAndATypedOneReplacesIt() throws Exception {
+        Profiles p = profiles(EDITABLE);
+        com.fasterxml.jackson.databind.ObjectMapper m = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.node.ObjectNode submitted = (com.fasterxml.jackson.databind.node.ObjectNode) m.readTree(
+                "{\"extends\":\"base\",\"endpoint\":\"http://changed\",\"authBasic\":\"****\",\"headers\":{\"X-Api-Key\":\"****\",\"X-New-Token\":\"fresh\"},"
+                        + "\"note\":\"****\",\"mystery\":42}");
+        com.fasterxml.jackson.databind.node.ObjectNode base = (com.fasterxml.jackson.databind.node.ObjectNode) m.readTree(
+                "{\"authBasic\":\"alice:topsecret\",\"headers\":{\"X-Api-Key\":\"k-123\"}}");
+        JsonNode result = Profiles.restoreSecrets(submitted, base);
+        assertEquals("alice:topsecret", result.get("authBasic").asText());
+        assertEquals("k-123", result.get("headers").get("X-Api-Key").asText());
+        assertEquals("fresh", result.get("headers").get("X-New-Token").asText());
+        assertEquals("****", result.get("note").asText(), "only a secret's name makes **** mean 'keep it'");
+        assertEquals("http://changed", result.get("endpoint").asText());
+
+        ConfigException e = assertThrows(ConfigException.class, () -> Profiles.restoreSecrets(submitted, null));
+        assertTrue(e.getMessage().contains("authBasic") && e.getMessage().contains("no saved value"), e.getMessage());
+        com.fasterxml.jackson.databind.node.ObjectNode nested = (com.fasterxml.jackson.databind.node.ObjectNode) m.readTree("{\"proxy\":{\"password\":\"****\"}}");
+        assertThrows(ConfigException.class, () -> Profiles.restoreSecrets(nested, (com.fasterxml.jackson.databind.node.ObjectNode) m.readTree("{\"proxy\":{\"host\":\"x\"}}")));
+        assertEquals("pw", Profiles.restoreSecrets(nested, (com.fasterxml.jackson.databind.node.ObjectNode) m.readTree("{\"proxy\":{\"password\":\"pw\"}}"))
+                .get("proxy").get("password").asText());
+    }
+
+    @Test
+    void profilesCanBeReadFromText() {
+        Profiles p = Profiles.parse("{\"profiles\":{\"x\":{}}} // end", Paths.get("whatever.json"));
+        assertEquals(Arrays.asList("x"), p.names());
+        assertThrows(ConfigException.class, () -> Profiles.parse("", Paths.get("whatever.json")));
+    }
 }

@@ -70,6 +70,19 @@ public final class ServeCommand {
         } else {
             out.println("  Profiles: none (no file at " + o.profileFile + ")");
         }
+        out.println("  Placeholder options: " + (Files.isRegularFile(o.placeholdersFile) ? o.placeholdersFile : "none (no file at " + o.placeholdersFile + ")"));
+        out.println("  Editing profiles and placeholders from the UI: " + (o.configEditAllowed() ? "ALLOWED" : "off")
+                + (o.allowConfigEdit == null && o.configEditAllowed() ? " (this server listens on this machine only)" : ""));
+        if (o.configEditAllowed()) {
+            // Allowed does not mean possible: a volume mounted read-only, say, cannot be edited whatever the server permits.
+            for (ConfigFile f : new ConfigFile[]{new ConfigFile(o.profileFile, "profiles file", null),
+                    new ConfigFile(o.placeholdersFile, "placeholders file", null)}) {
+                String why = f.readOnlyReason();
+                if (why != null) {
+                    out.println("    but: " + why);
+                }
+            }
+        }
         out.println("  Attachments by path: files under " + o.attachmentsDir
                 + (o.attachmentsDirExplicit ? "" : " (the working directory; change it with --attachments-dir)"));
         out.println("  Allowed destinations: " + (o.allowedHosts.isEmpty() ? "any host" : String.join(", ", o.allowedHosts)));
@@ -80,6 +93,11 @@ public final class ServeCommand {
             out.println("         send requests from this machine, with the credentials of the profiles it holds.");
             out.println("         Set --ui-user / --ui-password, restrict destinations with --allow-host, and publish the");
             out.println("         port only where you mean to (for Docker: -p 127.0.0.1:8080:8080).");
+        }
+        if (!o.isLoopbackOnly() && o.configEditAllowed()) {
+            out.println();
+            out.println("WARNING: the UI may change the profiles file, so anyone who can open it can point a profile at another");
+            out.println("         destination, or at any file of this machine. Keep it for UIs with a login (--ui-user).");
         }
         if (!o.isLoopbackOnly() && !o.attachmentsDirExplicit) {
             out.println();

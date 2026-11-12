@@ -14,10 +14,12 @@ services:
       SOAPCLI_UI_PASSWORD: ${SOAPCLI_UI_PASSWORD:-}
       # Only these destinations may be called, comma separated, e.g. "*.corp.example.com,10.1.*". Empty = any.
       SOAPCLI_ALLOWED_HOSTS: ${SOAPCLI_ALLOWED_HOSTS:-}
+      # Let the UI edit the profiles and placeholders files in ./config (needs the volume below without :ro, and a login):
+      # SOAPCLI_ALLOW_CONFIG_EDIT: "true"
       # Secrets referenced from profiles as ${ACC_CREDENTIALS}:
       # ACC_CREDENTIALS: ${ACC_CREDENTIALS:-}
     volumes:
-      - ./config:/config:ro          # profiles.json (optional): see the documentation on profiles
+      - ./config:/config:ro          # profiles.json and placeholders.json (optional); drop :ro to let the UI edit them
       # - ./attachments:/work:ro     # files the UI may attach by path (it can read nothing else); optional
     restart: unless-stopped
     read_only: true
