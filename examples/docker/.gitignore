@@ -1,0 +1,3 @@
+# Keystores and the like never belong in version control
+config/certs/*
+!config/certs/README.md

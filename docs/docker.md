@@ -103,6 +103,24 @@ docker compose up -d
 It publishes the UI on `127.0.0.1:8080`, reads `./config/profiles.json` and `./config/placeholders.json`, takes the login and the allowed destinations from
 a `.env` file, and hardens the container (read-only file system, no capabilities, no new privileges).
 
+#### A complete example to copy
+
+[`examples/docker`](https://github.com/marcemv90/SoapCLI/tree/main/examples/docker) is a folder to take as a starting point, with nothing to create: a
+`docker-compose.yml` plus the whole directory structure it expects.
+
+```text
+docker-compose.yml     the UI and a mock service to try it against
+soapcli.env            login, allowed destinations and the secrets the profiles use
+config/                profiles.json, placeholders.json, certs/   (becomes /config; the UI can edit it)
+work/                  requests/ and attachments/                  (becomes /work, read-only)
+mock/server.py         answers with what it received
+```
+
+It has profiles that extend a shared base, one that works against the mock service (with and without an attachment), and
+two for real services (basic authentication from the environment, and a client certificate), together with the dropdown
+options of three placeholders. Copy the folder, delete the demo parts and put your own endpoints in
+`config/profiles.json`. Its README walks through trying each feature in the UI.
+
 ### Behind a reverse proxy
 
 The UI speaks plain HTTP and the login is HTTP Basic, so a team deployment should sit behind a proxy that terminates HTTPS:

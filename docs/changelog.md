@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **[`examples/docker`](https://github.com/marcemv90/SoapCLI/tree/main/examples/docker)**, a complete Docker setup to copy and edit: a `docker-compose.yml` with the profiles,
+  placeholder options, request files, attachments and certificates folder it expects, and a small mock service so that
+  everything can be tried before pointing it at a real one. A job of the CI builds the image and runs the example end to
+  end, so it does not drift from the code.
+
 ## 2.2.0
 
 The web UI grows: profiles and the options of the placeholders can be edited from it, attachments can be saved with a

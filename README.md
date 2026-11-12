@@ -93,6 +93,10 @@ The image runs on Intel/AMD and ARM (Apple Silicon) machines. For a shared serve
 and put it behind HTTPS. See the
 [Docker documentation](https://marcemv90.github.io/SoapCLI/docker/) and `compose.yaml`.
 
+To start from a complete, working setup instead of from scratch, copy [`examples/docker`](https://github.com/marcemv90/SoapCLI/tree/main/examples/docker): a
+`docker-compose.yml` with the profiles, placeholder options, request files, attachments and a small mock service to try it
+against already in place. You only edit the files.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -125,6 +129,7 @@ src/main/resources/web/   the compiled web UI, embedded in the JAR (generated: s
 src/test/java/...   JUnit 5 tests, including real TLS / mutual TLS / authenticating-proxy tests on local sockets.
 web-ui/             source of the web UI (React, TypeScript, Tailwind, TailAdmin) and its tests.
 Dockerfile, compose.yaml   the image: web UI by default, command line client on demand.
+examples/           ready-to-copy setups (docker/: a compose file with its profiles, requests and attachments).
 docs/               MkDocs site.
 ```
 

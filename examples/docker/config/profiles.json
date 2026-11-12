@@ -1,0 +1,55 @@
+{
+  // SoapCLI profiles. Edit this file by hand, or from the web UI (the Profiles page): the UI changes only the
+  // profile you edit and leaves everything else, these comments included, as it is.
+  //
+  // Paths are paths INSIDE the container: ./config is /config, and ./work is /work, which is also the working
+  // directory, so a relative path such as "requests/demo-order.xml" starts at ./work.
+  // ${NAME} is read from the container's environment (soapcli.env), so secrets stay out of this file.
+  "profiles": {
+
+    // What the others share. It is not meant to be used on its own.
+    "base": {
+      "soapVersion": "1.1",
+      "headers": { "X-Client": "soapcli-example" },
+      "timeout": 60
+    },
+
+    // Works as it is: the `mock` service of docker-compose.yml answers it. Pick it on the Request page, or open the
+    // Profiles page and press "Load its request file", then Send.
+    "demo": {
+      "extends": "base",
+      "endpoint": "http://mock:8081/soap",
+      "soapAction": "urn:GetOrder",
+      "requestFile": "requests/demo-order.xml",
+      "args": { "ENV": "demo" }
+    },
+
+    // The same, with an attachment: the request refers to cid:invoice-1001 and the server reads the file.
+    "demo-upload": {
+      "extends": "demo",
+      "soapAction": "urn:UploadInvoice",
+      "requestFile": "requests/demo-upload.xml",
+      "attachments": { "invoice-1001": "attachments/invoice-1001.pdf" }
+    },
+
+    // A service that asks for Basic authentication. user:password comes from ACC_CREDENTIALS in soapcli.env.
+    // Change the endpoint to yours.
+    "acceptance": {
+      "extends": "base",
+      "endpoint": "https://acceptance.example.com/soap",
+      "authBasic": "${ACC_CREDENTIALS}",
+      "args": { "ENV": "acceptance" }
+    },
+
+    // A service that asks for a client certificate (mutual TLS). Put the keystore in ./config/certs (see the README
+    // there) and its password in KEYSTORE_PASSWORD in soapcli.env. A corporate CA can be trusted with a "truststore"
+    // of the same shape; a proxy with "proxy": { "type": "http", "host": "...", "port": 3128 }.
+    "production-mtls": {
+      "extends": "base",
+      "endpoint": "https://prod.example.com/soap",
+      "keystore": { "path": "/config/certs/client.p12", "type": "PKCS12", "password": "${KEYSTORE_PASSWORD}" },
+      "args": { "ENV": "production" },
+      "timeout": 120
+    }
+  }
+}

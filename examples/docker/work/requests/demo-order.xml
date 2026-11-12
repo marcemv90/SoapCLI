@@ -1,0 +1,10 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ord="http://example.com/orders">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ord:GetOrder>
+      <ord:Environment>___ENV:demo___</ord:Environment>
+      <ord:OrderId>___ORDER_ID:1001___</ord:OrderId>
+      <ord:Country>___COUNTRY:ES___</ord:Country>
+    </ord:GetOrder>
+  </soapenv:Body>
+</soapenv:Envelope>
