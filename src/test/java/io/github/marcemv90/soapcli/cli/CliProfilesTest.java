@@ -144,4 +144,71 @@ class CliProfilesTest {
             assertTrue(err.contains("within 1 s"), err);
         }
     }
+
+    // ---- workspaces ---------------------------------------------------------------------------------------------------
+
+    private Path workspaces(String name, String profilesJson) throws IOException {
+        Path folder = Files.createDirectories(tmp.resolve("workspaces").resolve(name));
+        Files.write(folder.resolve("profiles.json"), profilesJson.getBytes(StandardCharsets.UTF_8));
+        return folder;
+    }
+
+    @Test
+    void aWorkspaceSuppliesItsProfilesItsSecretsAndTheFolderRelativePathsStartIn() throws IOException {
+        try (MockServer server = new MockServer(r -> Reply.xml("<ok/>"))) {
+            Path ws = workspaces("billing", "{\"profiles\":{\"acc\":{\"endpoint\":\"" + server.url("/soap") + "\","
+                    + "\"requestFile\":\"requests/req.xml\",\"authBasic\":\"${CREDS}\",\"args\":{\"ID\":\"5\"}}}}");
+            Files.createDirectories(ws.resolve("requests"));
+            Files.write(ws.resolve("requests").resolve("req.xml"), ENV12.getBytes(StandardCharsets.UTF_8));
+            Files.write(ws.resolve("secrets.env"), "CREDS=alice:from-secrets-env\n".getBytes(StandardCharsets.UTF_8));
+
+            // the working directory is somewhere else entirely, so a relative path can only mean "inside the workspace"
+            assertEquals(0, run(Collections.emptyMap(), "--workspaces-dir", tmp.resolve("workspaces").toString(),
+                    "--workspace", "billing", "--profile", "acc"), err);
+            assertEquals("Basic YWxpY2U6ZnJvbS1zZWNyZXRzLWVudg==", server.requests.get(0).header("Authorization"));
+            assertTrue(server.requests.get(0).bodyText().contains("<ping>5</ping>"), server.requests.get(0).bodyText());
+
+            // the folder can come from the environment, and the listing commands read the same file
+            Map<String, String> env = Collections.singletonMap("SOAPCLI_WORKSPACES_DIR", tmp.resolve("workspaces").toString());
+            assertEquals(0, run(env, "--workspace", "billing", "--list-profiles"), err);
+            assertTrue(out.contains(tmp.resolve("workspaces").resolve("billing").resolve("profiles.json").toString()) && out.contains("- acc"), out);
+            assertEquals(0, run(env, "--workspace", "billing", "--show-profile", "acc"), err);
+            assertTrue(out.contains("requests/req.xml") && !out.contains("from-secrets-env"), out);
+        }
+    }
+
+    @Test
+    void theCommandLineAndTheProcessEnvironmentStillWorkNextToAWorkspace() throws IOException {
+        try (MockServer server = new MockServer(r -> Reply.xml("<ok/>"))) {
+            workspaces("billing", "{\"profiles\":{\"acc\":{\"endpoint\":\"" + server.url("/") + "\",\"authBasic\":\"${CREDS}\"}}}");
+            Map<String, String> env = new HashMap<>();
+            env.put("CREDS", "bob:from-the-process");
+            env.put("SOAPCLI_WORKSPACES_DIR", tmp.resolve("workspaces").toString());
+            assertEquals(0, run(env, "--workspace", "billing", "--profile", "acc", "--request-file", request().toString()), err);
+            assertEquals("Basic Ym9iOmZyb20tdGhlLXByb2Nlc3M=", server.requests.get(0).header("Authorization"));
+        }
+    }
+
+    @Test
+    void aWorkspaceThatCannotBeUsedIsReportedBeforeAnythingIsSent() throws IOException {
+        workspaces("billing", "{\"profiles\":{}}");
+        String dir = tmp.resolve("workspaces").toString();
+        Path file = profiles("{\"profiles\":{}}");
+
+        assertEquals(1, run(Collections.emptyMap(), "--workspace", "billing", "--list-profiles"));
+        assertTrue(err.contains("--workspaces-dir or SOAPCLI_WORKSPACES_DIR"), err);
+        assertEquals(1, run(Collections.emptyMap(), "--workspaces-dir", dir, "--list-profiles"));
+        assertTrue(err.contains("only makes sense together with --workspace"), err);
+        assertEquals(1, run(Collections.emptyMap(), "--workspaces-dir", dir, "--workspace", "nope", "--list-profiles"));
+        assertTrue(err.contains("There is no workspace 'nope'"), err);
+        for (String bad : new String[]{"../billing", "a/b", ".hidden", ""}) {
+            assertEquals(1, run(Collections.emptyMap(), "--workspaces-dir", dir, "--workspace", bad, "--list-profiles"), bad);
+            assertTrue(err.contains("is not a workspace name"), bad + " -> " + err);
+        }
+        assertEquals(1, run(Collections.emptyMap(), "--workspaces-dir", tmp.resolve("missing").toString(), "--workspace", "billing", "--list-profiles"));
+        assertTrue(err.contains("does not exist"), err);
+        assertEquals(1, run(Collections.emptyMap(), "--workspaces-dir", dir, "--workspace", "billing", "--profile-file", file.toString(), "--list-profiles"));
+        assertTrue(err.contains("--profile-file cannot be used with --workspace"), err);
+        assertTrue(Options.usage().contains("--workspace <name>") && Options.usage().contains("--workspaces-dir <dir>"));
+    }
 }

@@ -18,6 +18,8 @@ public final class HostPolicy {
 
     private final List<String> patterns;
     private final List<Pattern> compiled = new ArrayList<>();
+    /** A second policy that must allow the host too (a workspace narrows the server's), or {@code null}. */
+    private HostPolicy also;
 
     public HostPolicy(Collection<String> patterns) {
         this.patterns = new ArrayList<>();
@@ -52,9 +54,22 @@ public final class HostPolicy {
         return regex.toString();
     }
 
+    /**
+     * A policy that allows a host only if both this one and {@code other} do. Neither is changed. This is how a
+     * workspace can narrow, but never widen, what the whole server allows.
+     */
+    public HostPolicy and(HostPolicy other) {
+        if (other == null || other.isOpen()) {
+            return this;
+        }
+        HostPolicy both = new HostPolicy(patterns);
+        both.also = also == null ? other : also.and(other);
+        return both;
+    }
+
     /** True when no restriction is configured. */
     public boolean isOpen() {
-        return compiled.isEmpty();
+        return compiled.isEmpty() && (also == null || also.isOpen());
     }
 
     public List<String> patterns() {
@@ -62,6 +77,10 @@ public final class HostPolicy {
     }
 
     public boolean allows(String host) {
+        return allowedByThisList(host) && (also == null || also.allows(host));
+    }
+
+    private boolean allowedByThisList(String host) {
         if (compiled.isEmpty()) {
             return true;
         }
@@ -79,9 +98,12 @@ public final class HostPolicy {
 
     /** @throws HostNotAllowedException if {@code host} is not on the list */
     public void check(String host) {
-        if (!allows(host)) {
+        if (!allowedByThisList(host)) {
             throw new HostNotAllowedException("The host '" + host + "' is not allowed by this server's policy. "
                     + "Allowed: " + String.join(", ", patterns));
+        }
+        if (also != null) {
+            also.check(host);
         }
     }
 }

@@ -114,11 +114,22 @@ public final class Profile {
 
     /** Copies every value the profile defines into {@code cfg}; leaves the rest untouched. */
     public void applyTo(CallConfig cfg, String userHome) {
+        applyTo(cfg, userHome, null);
+    }
+
+    /**
+     * Like {@link #applyTo(CallConfig, String)}, but a relative path of the profile ({@code requestFile},
+     * {@code attachments}, {@code keystore}, {@code truststore}) is taken from {@code baseDir} instead of the working
+     * directory. A workspace uses this so that its folder holds everything its profiles refer to.
+     *
+     * @param baseDir the folder relative paths start at, or {@code null} for the working directory
+     */
+    public void applyTo(CallConfig cfg, String userHome, java.nio.file.Path baseDir) {
         if (endpoint != null) {
             cfg.endpoint = endpoint;
         }
         if (requestFile != null) {
-            cfg.requestFile = expand(requestFile, userHome);
+            cfg.requestFile = expand(requestFile, userHome, baseDir);
         }
         if (soapVersionSet) {
             cfg.soapVersion = soapVersion;
@@ -140,7 +151,7 @@ public final class Profile {
         }
         cfg.args.putAll(args);
         for (Map.Entry<String, String> a : attachments.entrySet()) {
-            cfg.attachments.put(a.getKey(), expand(a.getValue(), userHome));
+            cfg.attachments.put(a.getKey(), expand(a.getValue(), userHome, baseDir));
         }
 
         TransportOptions t = cfg.transport;
@@ -157,7 +168,7 @@ public final class Profile {
             t.tls.insecure = insecure;
         }
         if (keystorePath != null) {
-            t.tls.keystorePath = expand(keystorePath, userHome);
+            t.tls.keystorePath = expand(keystorePath, userHome, baseDir);
         }
         if (keystoreType != null) {
             t.tls.keystoreType = keystoreType;
@@ -172,7 +183,7 @@ public final class Profile {
             t.tls.keystoreAliasPkPass = keystoreAliasPkPass;
         }
         if (truststorePath != null) {
-            t.tls.truststorePath = expand(truststorePath, userHome);
+            t.tls.truststorePath = expand(truststorePath, userHome, baseDir);
         }
         if (truststoreType != null) {
             t.tls.truststoreType = truststoreType;
@@ -296,9 +307,19 @@ public final class Profile {
         }
     }
 
-    private static String expand(String path, String userHome) {
+    private static String expand(String path, String userHome, java.nio.file.Path baseDir) {
         if (userHome != null && (path.equals("~") || path.startsWith("~/") || path.startsWith("~\\"))) {
             return userHome + path.substring(1);
+        }
+        if (baseDir != null) {
+            try {
+                java.nio.file.Path given = java.nio.file.Paths.get(path);
+                if (!given.isAbsolute() && !path.startsWith("/") && !path.startsWith("\\")) {
+                    return baseDir.resolve(given).normalize().toString();
+                }
+            } catch (java.nio.file.InvalidPathException e) {
+                // left as written: the code that opens the file reports it
+            }
         }
         return path;
     }

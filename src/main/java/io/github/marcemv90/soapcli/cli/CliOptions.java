@@ -21,6 +21,8 @@ final class CliOptions {
 
     String profileName;
     String profileFile;
+    String workspace;
+    String workspacesDir;
 
     boolean help;
     boolean version;

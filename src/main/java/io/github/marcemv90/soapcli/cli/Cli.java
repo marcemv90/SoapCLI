@@ -11,6 +11,7 @@ import io.github.marcemv90.soapcli.core.SoapClient;
 import io.github.marcemv90.soapcli.core.SoapResponse;
 import io.github.marcemv90.soapcli.core.TransportException;
 import io.github.marcemv90.soapcli.core.Version;
+import io.github.marcemv90.soapcli.core.WorkspaceFolder;
 import io.github.marcemv90.soapcli.core.XmlCharsets;
 import java.io.IOException;
 import java.io.InputStream;
@@ -119,6 +120,24 @@ public final class Cli {
             return ExitCodes.OK;
         }
         Path profileFile = o.profileFile != null ? Paths.get(o.profileFile) : Profiles.defaultFile(env, userHome);
+        Path workspaceFolder = null;
+        Map<String, String> profileEnv = env;
+        if (o.workspace != null) {
+            if (o.profileFile != null) {
+                throw new ConfigException("--profile-file cannot be used with --workspace: the profiles of a workspace "
+                        + "are in its own profiles.json");
+            }
+            String dir = o.workspacesDir != null ? o.workspacesDir : env.get("SOAPCLI_WORKSPACES_DIR");
+            if (dir == null || dir.isBlank()) {
+                throw new ConfigException("--workspace needs the folder that holds the workspaces: "
+                        + "--workspaces-dir or SOAPCLI_WORKSPACES_DIR");
+            }
+            workspaceFolder = WorkspaceFolder.find(Paths.get(dir.trim()), o.workspace);
+            profileFile = WorkspaceFolder.profilesFile(workspaceFolder);
+            profileEnv = WorkspaceFolder.env(env, workspaceFolder);
+        } else if (o.workspacesDir != null) {
+            throw new ConfigException("--workspaces-dir only makes sense together with --workspace");
+        }
         if (o.listProfiles || o.listProfilesDetailed) {
             listProfiles(profileFile, o.listProfilesDetailed);
             return ExitCodes.OK;
@@ -131,9 +150,9 @@ public final class Cli {
 
         // 2. the profile, then the command line on top of it
         if (o.profileName != null) {
-            Profile profile = Profiles.load(profileFile).resolve(o.profileName, env);
+            Profile profile = Profiles.load(profileFile).resolve(o.profileName, profileEnv);
             profile.warnings.forEach(w -> err.println("Warning: " + w));
-            profile.applyTo(o.call, userHome);
+            profile.applyTo(o.call, userHome, workspaceFolder);
             if (profile.theme != null) {
                 o.theme = ColorTheme.parse(profile.theme);
             }

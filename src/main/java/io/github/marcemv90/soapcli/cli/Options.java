@@ -128,6 +128,11 @@ final class Options {
                 (o, v, e) -> o.profileName = v, "--profile");
         earlyValue(profiles, "<path>", "Profiles file (default: $SOAPCLI_PROFILE_FILE or ~/.config/soap-cli-profiles.json).",
                 (o, v, e) -> o.profileFile = v, "--profile-file");
+        earlyValue(profiles, "<name>", "Use a workspace: its profiles.json is the profiles file, its secrets.env feeds ${NAME}\n"
+                + "in the profiles, and the relative paths in them start in its folder.",
+                (o, v, e) -> o.workspace = v, "--workspace");
+        earlyValue(profiles, "<dir>", "The folder that holds the workspaces (default: $SOAPCLI_WORKSPACES_DIR).",
+                (o, v, e) -> o.workspacesDir = v, "--workspaces-dir");
         earlyFlag(profiles, "List the profile names and exit.", (o, v, e) -> o.listProfiles = true, "--list-profiles");
         earlyFlag(profiles, "List the profiles with their settings (secrets masked) and exit.",
                 (o, v, e) -> o.listProfilesDetailed = true, "--list-profiles-detailed");
