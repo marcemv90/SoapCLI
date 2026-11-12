@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AttachmentLoadDialog } from "@/components/request/AttachmentLoadDialog";
 import { BodyTab } from "@/components/request/body";
 import { EndpointBar } from "@/components/request/EndpointBar";
 import { ResponsePanel } from "@/components/request/ResponsePanel";
@@ -55,6 +56,7 @@ export function RequestPage() {
   return (
     <div className="flex flex-col gap-4 md:gap-6">
       <EndpointBar />
+      <AttachmentLoadDialog />
       <NoServerNotice />
       {warnings.length > 0 && (
         <Alert variant="warning">

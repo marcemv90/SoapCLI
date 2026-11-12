@@ -8,6 +8,7 @@ import com.sun.net.httpserver.HttpServer;
 import io.github.marcemv90.soapcli.core.ConfigException;
 import io.github.marcemv90.soapcli.core.HostNotAllowedException;
 import io.github.marcemv90.soapcli.core.TransportException;
+import io.github.marcemv90.soapcli.web.ApiModel.AttachmentCheckRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.ErrorResponse;
 import io.github.marcemv90.soapcli.web.ApiModel.FormatRequest;
 import io.github.marcemv90.soapcli.web.ApiModel.FormatResponse;
@@ -220,6 +221,14 @@ public final class WebServer implements AutoCloseable {
                     }
                     SendRequest request = readJson(ex, SendRequest.class);
                     return jsonResponse(200, api.preview(request));
+                }
+                case "/api/attachments/check": {
+                    Response bad = requireJsonPost(ex, method);
+                    if (bad != null) {
+                        return bad;
+                    }
+                    AttachmentCheckRequest request = readJson(ex, AttachmentCheckRequest.class);
+                    return jsonResponse(200, api.checkAttachment(request.path));
                 }
                 case "/api/format": {
                     Response bad = requireJsonPost(ex, method);

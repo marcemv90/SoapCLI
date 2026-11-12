@@ -15,6 +15,7 @@ import io.github.marcemv90.soapcli.core.SoapVersion;
 import io.github.marcemv90.soapcli.core.Version;
 import io.github.marcemv90.soapcli.core.XmlCharsets;
 import io.github.marcemv90.soapcli.core.XmlFormat;
+import io.github.marcemv90.soapcli.web.ApiModel.AttachmentCheckResponse;
 import io.github.marcemv90.soapcli.web.ApiModel.AttachmentUpload;
 import io.github.marcemv90.soapcli.web.ApiModel.InfoResponse;
 import io.github.marcemv90.soapcli.web.ApiModel.NameValue;
@@ -72,6 +73,7 @@ final class ApiService {
         info.maxBodyBytes = options.maxBodyBytes;
         info.profilesFile = options.profileFile.toString();
         info.profilesFileFound = Files.isRegularFile(options.profileFile);
+        info.attachmentsDir = options.attachmentsDir.toString();
         return info;
     }
 
@@ -135,6 +137,96 @@ final class ApiService {
         } catch (IOException e) {
             throw new SendError(500, "internal", "Could not read the request file: " + e.getMessage());
         }
+    }
+
+    // ---- attachments by path --------------------------------------------------------------------------------------
+
+    /**
+     * Looks at a file the UI wants to attach by path: it must be inside the attachments folder, be a readable regular
+     * file, and not exceed the size limit. The UI calls this for each file before sending, so it can show them loading
+     * and refuse a bad path before anything is sent.
+     */
+    AttachmentCheckResponse checkAttachment(String path) {
+        Path file = resolveAttachment(path);
+        long size = sizeOf(file);
+        if (size > options.maxBodyBytes) {
+            throw tooLargeAttachment(path, size);
+        }
+        AttachmentCheckResponse response = new AttachmentCheckResponse();
+        response.path = path;
+        response.name = file.getFileName().toString();
+        response.size = size;
+        response.resolved = file.toString();
+        return response;
+    }
+
+    /**
+     * Resolves an attachment path from the browser to a real file inside the attachments folder. Whatever the browser
+     * writes ({@code ..}, an absolute path elsewhere, a symbolic link that leaves the folder), nothing outside the
+     * folder is ever read: this is what keeps "attach by path" from being "read any file of this machine and send it
+     * to any endpoint".
+     */
+    private Path resolveAttachment(String given) {
+        if (!notBlank(given)) {
+            throw new SendError(400, "config", "The attachment path is empty");
+        }
+        Path configured = options.attachmentsDir.toAbsolutePath().normalize();
+        Path root;
+        try {
+            root = configured.toRealPath();
+        } catch (IOException e) {
+            throw new SendError(500, "config", "The attachments folder '" + configured + "' is not available on this server");
+        }
+        String text = given.trim();
+        if ((text.equals("~") || text.startsWith("~/")) && notBlank(options.userHome)) {
+            text = options.userHome + text.substring(1);
+        }
+        Path wanted;
+        try {
+            Path candidate = Path.of(text);
+            wanted = (candidate.isAbsolute() ? candidate : configured.resolve(candidate)).normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            throw new SendError(400, "config", "'" + given + "' is not a valid path");
+        }
+        // Looked at before touching the disk, so a path outside the folder cannot be used to find out what exists there.
+        if (!wanted.startsWith(configured) && !wanted.startsWith(root)) {
+            throw outsideFolder(given, configured);
+        }
+        Path real;
+        try {
+            real = wanted.toRealPath();
+        } catch (IOException e) {
+            throw new SendError(404, "config", "The attachment file '" + given + "' was not found in " + configured);
+        }
+        if (!real.startsWith(root)) {
+            throw outsideFolder(given, configured); // a symbolic link that leaves the folder
+        }
+        if (!Files.isRegularFile(real) || !Files.isReadable(real)) {
+            throw new SendError(400, "config", "'" + given + "' is not a readable file");
+        }
+        return real;
+    }
+
+    private static SendError outsideFolder(String given, Path folder) {
+        return new SendError(403, "forbidden", "'" + given + "' is outside the folder this server allows for attachments ("
+                + folder + "). Put the file there, or ask the administrator to change --attachments-dir");
+    }
+
+    private static long sizeOf(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException e) {
+            throw new SendError(400, "config", "Cannot read '" + file.getFileName() + "': " + e.getMessage());
+        }
+    }
+
+    private SendError tooLargeAttachment(String what, long size) {
+        return new SendError(413, "too-large", "The attachment '" + what + "' (" + megabytes(size) + " MB) is larger than "
+                + (options.maxBodyBytes / (1024 * 1024)) + " MB (--max-body-mb)");
+    }
+
+    private static String megabytes(long bytes) {
+        return String.format(java.util.Locale.ROOT, "%.1f", bytes / (1024.0 * 1024.0));
     }
 
     // ---- format ---------------------------------------------------------------------------------------------------
@@ -270,7 +362,7 @@ final class ApiService {
                 throw new SendError(400, "config", "The request body is empty");
             }
 
-            saveAttachments(req.attachments, cfg, job);
+            addAttachments(req.attachments, cfg, job);
 
             Charset charset = XmlCharsets.declared(body);
             job.prepared = RequestBuilder.build(cfg, body, charset, Version.userAgent());
@@ -333,21 +425,41 @@ final class ApiService {
         }
     }
 
-    /** Writes uploaded attachments to a private temporary directory; file names never come from the browser. */
-    private void saveAttachments(List<AttachmentUpload> uploads, CallConfig cfg, Job job) {
+    /**
+     * Adds the attachments of a request to the call. Uploaded bytes are written to a private temporary directory with
+     * names chosen here, never by the browser; a file named by path is read where it is, once it has been confined to
+     * the attachments folder. Either way, an attachment is a {@code cid} plus exactly one of the two.
+     */
+    private void addAttachments(List<AttachmentUpload> uploads, CallConfig cfg, Job job) {
         if (uploads == null || uploads.isEmpty()) {
             return;
         }
         try {
-            Path dir = Files.createTempDirectory("soapcli-web-");
-            job.tempDir = dir; // from now on the job cleans it up, even if a later attachment is rejected
+            Path dir = null;
+            long bytesByPath = 0;
             int index = 0;
             for (AttachmentUpload upload : uploads) {
                 if (upload == null || !notBlank(upload.cid) || !CID.matcher(upload.cid.trim()).matches()) {
                     throw new SendError(400, "config", "Each attachment needs a CID made of letters, digits and . _ - ~ % @ +");
                 }
+                String cid = upload.cid.trim();
+                if (notBlank(upload.path) && notBlank(upload.contentBase64)) {
+                    throw new SendError(400, "config", "The attachment '" + cid + "' has both a path and content: give one of them");
+                }
+                if (notBlank(upload.path)) {
+                    Path file = resolveAttachment(upload.path);
+                    long size = sizeOf(file);
+                    bytesByPath += size;
+                    if (bytesByPath > options.maxBodyBytes) {
+                        throw size > options.maxBodyBytes ? tooLargeAttachment(upload.path, size)
+                                : new SendError(413, "too-large", "The files attached by path add up to more than "
+                                + (options.maxBodyBytes / (1024 * 1024)) + " MB (--max-body-mb)");
+                    }
+                    cfg.attachments.put(cid, file.toString());
+                    continue;
+                }
                 if (!notBlank(upload.contentBase64)) {
-                    throw new SendError(400, "config", "The attachment '" + upload.cid + "' has no content");
+                    throw new SendError(400, "config", "The attachment '" + upload.cid + "' has no content (neither a path nor file data)");
                 }
                 byte[] data;
                 try {
@@ -355,9 +467,13 @@ final class ApiService {
                 } catch (IllegalArgumentException e) {
                     throw new SendError(400, "config", "The attachment '" + upload.cid + "' is not valid Base64");
                 }
+                if (dir == null) {
+                    dir = Files.createTempDirectory("soapcli-web-");
+                    job.tempDir = dir; // from now on the job cleans it up, even if a later attachment is rejected
+                }
                 Path file = dir.resolve("attachment-" + (index++) + ".bin");
                 Files.write(file, data);
-                cfg.attachments.put(upload.cid.trim(), file.toString());
+                cfg.attachments.put(cid, file.toString());
             }
         } catch (IOException e) {
             throw new SendError(500, "internal", "Could not store the attachments: " + e.getMessage());

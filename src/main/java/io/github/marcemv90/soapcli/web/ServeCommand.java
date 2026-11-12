@@ -32,6 +32,12 @@ public final class ServeCommand {
             return 0;
         }
 
+        if (!Files.isDirectory(options.attachmentsDir)) {
+            err.println("Error: the attachments folder '" + options.attachmentsDir + "' is not a directory "
+                    + "(--attachments-dir / SOAPCLI_ATTACHMENTS_DIR)");
+            return 1;
+        }
+
         WebServer server = new WebServer(options, out);
         try {
             server.start();
@@ -64,6 +70,8 @@ public final class ServeCommand {
         } else {
             out.println("  Profiles: none (no file at " + o.profileFile + ")");
         }
+        out.println("  Attachments by path: files under " + o.attachmentsDir
+                + (o.attachmentsDirExplicit ? "" : " (the working directory; change it with --attachments-dir)"));
         out.println("  Allowed destinations: " + (o.allowedHosts.isEmpty() ? "any host" : String.join(", ", o.allowedHosts)));
         out.println("  UI login: " + (o.hasAuth() ? "required (user '" + o.uiUser + "')" : "NOT required"));
         if (!o.isLoopbackOnly() && !o.hasAuth()) {
@@ -72,6 +80,11 @@ public final class ServeCommand {
             out.println("         send requests from this machine, with the credentials of the profiles it holds.");
             out.println("         Set --ui-user / --ui-password, restrict destinations with --allow-host, and publish the");
             out.println("         port only where you mean to (for Docker: -p 127.0.0.1:8080:8080).");
+        }
+        if (!o.isLoopbackOnly() && !o.attachmentsDirExplicit) {
+            out.println();
+            out.println("WARNING: users of the UI can attach, and so send to the destinations they may call, any file under");
+            out.println("         " + o.attachmentsDir + ". Choose a folder meant for that with --attachments-dir.");
         }
         out.flush();
     }

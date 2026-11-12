@@ -6,6 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ChevronDownIcon, CodeIcon, ColumnsIcon, DownloadIcon, FloppyDiscIcon, GlobeIcon, RowsIcon, SendIcon, XIcon } from "@/icons";
+import { activeAttachments } from "@/lib/attachments";
 import { toCliCommand, toCurl } from "@/lib/command";
 import { copyText, downloadFile } from "@/lib/format";
 import { findPlaceholders } from "@/lib/placeholders";
@@ -30,9 +31,10 @@ function CopyAsMenu() {
     try {
       const body = toCurl(draft, await previewViaServer(draft));
       if (body === null) return done("curl cannot send MTOM; use the CLI command");
-      const note = findPlaceholders(draft.body).length > 0
-        ? "# request.xml must hold the final XML: replace the ___NAME:default___ markers first\n" : "";
-      await copy(note + body, "curl command");
+      const notes = [];
+      if (findPlaceholders(draft.body).length > 0) notes.push("# request.xml must hold the final XML: replace the ___NAME:default___ markers first\n");
+      if (activeAttachments(draft).length > 0) notes.push("# ...and each cid:NAME with the Base64 of its file (curl cannot attach files by itself)\n");
+      await copy(notes.join("") + body, "curl command");
     } catch (e) {
       done(e instanceof Error ? e.message : "Cannot build the request");
     }

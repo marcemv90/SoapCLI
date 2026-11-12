@@ -33,6 +33,24 @@ class ServeOptionsTest {
     }
 
     @Test
+    void attachmentsAreOnlyReadFromTheWorkingDirectoryUnlessToldOtherwise() {
+        ServeOptions o = parse(Collections.emptyMap());
+        assertEquals(Paths.get("").toAbsolutePath().normalize(), o.attachmentsDir);
+        assertFalse(o.attachmentsDirExplicit);
+
+        Map<String, String> env = new HashMap<>();
+        env.put("SOAPCLI_ATTACHMENTS_DIR", "/work/../data/files");
+        o = parse(env);
+        assertEquals(Paths.get("/data/files").toAbsolutePath(), o.attachmentsDir);
+        assertTrue(o.attachmentsDirExplicit);
+
+        o = parse(env, "--attachments-dir", "/srv/attach");           // the command line wins
+        assertEquals(Paths.get("/srv/attach").toAbsolutePath(), o.attachmentsDir);
+        assertThrows(ConfigException.class, () -> parse(Collections.emptyMap(), "--attachments-dir", " "));
+        assertTrue(ServeOptions.usage().contains("--attachments-dir"));
+    }
+
+    @Test
     void theEnvironmentConfiguresAContainer() {
         Map<String, String> env = new HashMap<>();
         env.put("SOAPCLI_HOST", "0.0.0.0");

@@ -7,9 +7,13 @@ export const referencedCids = (draft: Pick<RequestDraft, "body" | "mtom">): stri
 
 /**
  * The files that go out with the request: the ones assigned to a `cid:` the body still refers to. A file whose
- * reference was deleted from the body stays in memory, so that retyping it does not lose the choice, but is not sent.
+ * reference was deleted from the body is kept, so that retyping it does not lose the choice, but is not sent.
  */
 export function activeAttachments(draft: Pick<RequestDraft, "body" | "mtom" | "attachments">): AttachmentInput[] {
   const wanted = new Set(referencedCids(draft));
-  return draft.attachments.filter((a) => wanted.has(a.cid));
+  return draft.attachments.filter((a) => wanted.has(a.cid) && (a.kind === "file" || a.path.trim() !== ""));
 }
+
+/** The files named by path: the ones the server has to load before the request can be sent. */
+export const pathAttachments = (draft: Pick<RequestDraft, "body" | "mtom" | "attachments">) =>
+  activeAttachments(draft).filter((a): a is Extract<AttachmentInput, { kind: "path" }> => a.kind === "path");

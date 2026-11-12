@@ -20,7 +20,11 @@ export function toCliCommand(draft: RequestDraft, kind: CommandKind, image = "gh
   for (const [name, value] of Object.entries(draft.args)) args.push(`--arg ${shellQuote(`${name}=${value}`)}`);
   if (draft.auth.kind === "basic") args.push("--auth-basic-env SOAP_CREDENTIALS");
   if (draft.auth.kind === "bearer") args.push("--auth-bearer-env SOAP_TOKEN");
-  for (const a of activeAttachments(draft)) args.push(`--attachment ${shellQuote(`${a.cid}=./${a.filename || a.cid}`)}`);
+  for (const a of activeAttachments(draft)) {
+    // A path is written as it is on the server; a file chosen here is assumed to sit next to request.xml.
+    const file = a.kind === "path" ? a.path.trim() : `./${a.filename || a.cid}`;
+    args.push(`--attachment ${shellQuote(`${a.cid}=${file}`)}`);
+  }
   if (draft.mtom) args.push("--mtom");
   if (draft.options.timeoutSeconds > 0) args.push(`--timeout ${draft.options.timeoutSeconds}`);
   if (draft.options.followRedirects) args.push("--follow-redirects");

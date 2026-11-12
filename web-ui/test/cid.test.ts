@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { activeAttachments, referencedCids } from "../src/lib/attachments";
+import { activeAttachments, pathAttachments, referencedCids } from "../src/lib/attachments";
 import { findCids } from "../src/lib/cid";
-import { attachment, draft } from "./helpers";
+import { attachment, draft, pathAttachment } from "./helpers";
 
 describe("findCids", () => {
   it("shows the cid of an element, not the one of an attribute", () => {
@@ -56,6 +56,15 @@ describe("activeAttachments", () => {
     const files = [attachment("keep", "1")];
     expect(activeAttachments(draft({ body: "<a/>", attachments: files }))).toEqual([]);
     expect(activeAttachments(draft({ body, attachments: files }))).toHaveLength(1);
+  });
+
+  it("lists the files named by path, which the server has to load, apart from the ones chosen here", () => {
+    const d = draft({
+      body: "<a><x>cid:p</x><y>cid:f</y><z>cid:blank</z><w>cid:gone</w></a>".replace("<w>cid:gone</w>", ""),
+      attachments: [pathAttachment("p", "one.pdf"), attachment("f", "1"), pathAttachment("blank", " "), pathAttachment("unused", "x.pdf")],
+    });
+    expect(activeAttachments(d).map((a) => a.cid)).toEqual(["p", "f"]);
+    expect(pathAttachments(d).map((a) => a.cid)).toEqual(["p"]);
   });
 
   it("counts CDATA references in inline mode only", () => {

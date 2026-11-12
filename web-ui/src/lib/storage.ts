@@ -35,15 +35,24 @@ export const KEYS = {
   theme: "soapcli.theme",
 } as const;
 
-/** A draft as stored: never the password or token, and never the attachments' bytes. */
+/** An attachment as stored: only the path on the server. A file chosen on this computer is never stored. */
+export interface StoredAttachment {
+  cid: string;
+  path: string;
+}
+
+/** A draft as stored: never the password or token, and never the contents of a file. */
 export type StoredDraft = Omit<RequestDraft, "attachments" | "auth"> & {
   auth: { kind: RequestDraft["auth"]["kind"]; user: string };
+  /** Absent in what older versions stored. */
+  attachments?: StoredAttachment[];
 };
 
 export function toStored(draft: RequestDraft): StoredDraft {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { attachments, auth, ...rest } = draft;
-  return { ...rest, auth: { kind: auth.kind, user: auth.user } };
+  const paths: StoredAttachment[] = [];
+  for (const a of attachments) if (a.kind === "path" && a.path.trim()) paths.push({ cid: a.cid, path: a.path });
+  return { ...rest, auth: { kind: auth.kind, user: auth.user }, attachments: paths };
 }
 
 /** Reads a draft back, picking only the fields that exist today (older versions stored a few more). */
@@ -61,7 +70,9 @@ export function fromStored(stored: Partial<StoredDraft> | undefined): RequestDra
     mtom: stored.mtom === true,
     options: { ...base.options, ...(stored.options ?? {}) },
     auth: { ...base.auth, kind: stored.auth?.kind ?? "none", user: stored.auth?.user ?? "" },
-    attachments: [],
+    attachments: (Array.isArray(stored.attachments) ? stored.attachments : [])
+      .filter((a): a is StoredAttachment => !!a && typeof a.cid === "string" && typeof a.path === "string" && a.path.trim() !== "")
+      .map((a) => ({ kind: "path" as const, id: newId(), cid: a.cid, path: a.path })),
     profile: typeof stored.profile === "string" ? stored.profile : "",
   };
 }

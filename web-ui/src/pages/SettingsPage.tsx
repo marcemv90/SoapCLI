@@ -77,6 +77,7 @@ export function SettingsPage() {
             <Row label="Destinations">{info.allowedHosts.length === 0 ? "any host" : info.allowedHosts.join(", ")}</Row>
             <Row label="Skip TLS checks">{info.insecureTlsAllowed ? "allowed" : "disabled"}</Row>
             <Row label="Largest request">{formatBytes(info.maxBodyBytes)}</Row>
+            <Row label="Attachments folder"><span className="break-all font-mono text-xs">{info.attachmentsDir}</span></Row>
             <Row label="Profiles file">{info.profilesFileFound ? info.profilesFile : "none found"}</Row>
             <Row label="Profiles">
               {server.profiles?.error ? "invalid file" : server.profiles?.profiles.length ?? 0}

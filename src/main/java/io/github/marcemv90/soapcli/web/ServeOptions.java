@@ -21,6 +21,13 @@ public final class ServeOptions {
     public String uiPassword;
     public final List<String> allowedHosts = new ArrayList<>();
     public Path profileFile;
+    /**
+     * The only folder the UI may read attachments from when a request names a file by path. Defaults to the working
+     * directory (in the Docker image, {@code /work}).
+     */
+    public Path attachmentsDir;
+    /** Whether {@link #attachmentsDir} was chosen, as opposed to being the working directory by default. */
+    public boolean attachmentsDirExplicit;
     public long maxBodyBytes = 25L * 1024 * 1024;
     public long maxResponseBytes = 20L * 1024 * 1024;
     public boolean noInsecureTls;
@@ -68,6 +75,11 @@ public final class ServeOptions {
         }
         o.noInsecureTls = isTrue(env.get("SOAPCLI_NO_INSECURE_TLS"));
         o.profileFile = Profiles.defaultFile(env, userHome);
+        o.attachmentsDir = Paths.get("").toAbsolutePath().normalize();
+        if (notBlank(env.get("SOAPCLI_ATTACHMENTS_DIR"))) {
+            o.attachmentsDir = Paths.get(env.get("SOAPCLI_ATTACHMENTS_DIR").trim()).toAbsolutePath().normalize();
+            o.attachmentsDirExplicit = true;
+        }
 
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -117,6 +129,11 @@ public final class ServeOptions {
                     break;
                 case "--profile-file":
                     o.profileFile = Paths.get(nonEmpty(value(args, i, inline, arg), arg));
+                    i += inline == null ? 1 : 0;
+                    break;
+                case "--attachments-dir":
+                    o.attachmentsDir = Paths.get(nonEmpty(value(args, i, inline, arg), arg)).toAbsolutePath().normalize();
+                    o.attachmentsDirExplicit = true;
                     i += inline == null ? 1 : 0;
                     break;
                 case "--max-body-mb":
@@ -196,6 +213,8 @@ public final class ServeOptions {
                 + "  --host <addr>             Address to listen on (default 127.0.0.1)  [SOAPCLI_HOST]\n"
                 + "  --port <n>                Port (default 8080)  [SOAPCLI_PORT]\n"
                 + "  --profile-file <path>     Profiles file shown in the UI  [SOAPCLI_PROFILE_FILE]\n"
+                + "  --attachments-dir <dir>   Folder the UI may read attachments from, by path; nothing outside it can be\n"
+                + "                            attached (default: the working directory)  [SOAPCLI_ATTACHMENTS_DIR]\n"
                 + "\n"
                 + "Access control (strongly recommended when listening on a network address):\n"
                 + "  --ui-user <name>          Require this user (HTTP Basic)  [SOAPCLI_UI_USER]\n"
@@ -206,7 +225,8 @@ public final class ServeOptions {
                 + "  --no-insecure-tls         Do not offer the 'skip certificate checks' option  [SOAPCLI_NO_INSECURE_TLS=true]\n"
                 + "\n"
                 + "Limits:\n"
-                + "  --max-body-mb <n>         Largest request accepted from the browser (default 25)  [SOAPCLI_MAX_BODY_MB]\n"
+                + "  --max-body-mb <n>         Largest request accepted from the browser, and most that the files attached\n"
+                + "                            by path may add up to (default 25)  [SOAPCLI_MAX_BODY_MB]\n"
                 + "  --max-response-mb <n>     Largest response returned to the browser (default 20)  [SOAPCLI_MAX_RESPONSE_MB]\n"
                 + "\n"
                 + "  -h, --help                Show this help\n"

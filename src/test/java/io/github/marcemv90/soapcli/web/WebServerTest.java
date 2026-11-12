@@ -371,6 +371,152 @@ class WebServerTest {
         assertEquals(before, tempDirs());
     }
 
+    // ---- attachments by path ----------------------------------------------------------------------------------------
+
+    /** A folder for attachments with one file in it, and a secret next to the folder, outside it. */
+    private Path attachmentsFolder() throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve("files"));
+        Files.writeString(dir.resolve("doc.txt"), "hello");
+        Files.createDirectories(dir.resolve("sub"));
+        Files.writeString(dir.resolve("sub").resolve("deep.txt"), "deep");
+        Files.writeString(tmp.resolve("secret.txt"), "TOP-SECRET");
+        return dir;
+    }
+
+    private static Map<String, Object> withPath(Map<String, Object> request, String path) {
+        request.put("body", ENV11.replace("<ping/>", "<v>cid:f</v>"));
+        request.put("attachments", List.of(Map.of("cid", "f", "path", path)));
+        return request;
+    }
+
+    @Test
+    void anAttachmentCanBeNamedByPathInsideTheAttachmentsFolder() throws Exception {
+        Path dir = attachmentsFolder();
+        WebServer s = start("--attachments-dir", dir.toString());
+        int before = tempDirs();
+        try (MockServer target = mock(r -> Reply.xml("<ok/>"))) {
+            // relative to the folder, in a sub folder, absolute, with a harmless ".." that stays inside
+            for (String path : new String[]{"doc.txt", "sub/../doc.txt", dir.resolve("doc.txt").toString()}) {
+                postJson(s, "/api/send", withPath(sendBody(target.url("/")), path));
+            }
+            assertEquals(3, target.requests.size());
+            for (MockServer.Received r : target.requests) {
+                assertTrue(r.bodyText().contains("<v>aGVsbG8=</v>"), r.bodyText());
+            }
+            postJson(s, "/api/send", withPath(sendBody(target.url("/")), "sub/deep.txt"));
+            assertTrue(target.requests.get(3).bodyText().contains("<v>ZGVlcA==</v>"));
+
+            Map<String, Object> mtom = withPath(sendBody(target.url("/")), "doc.txt");
+            mtom.put("mtom", true);
+            postJson(s, "/api/send", mtom);
+            assertTrue(new String(target.requests.get(4).body, StandardCharsets.ISO_8859_1)
+                    .contains("Content-ID: <f>\r\nContent-Transfer-Encoding: binary\r\n\r\nhello\r\n"));
+        }
+        assertEquals(before, tempDirs(), "a file read by path is not copied");
+        assertEquals("hello", Files.readString(dir.resolve("doc.txt")), "and it is left as it was");
+    }
+
+    @Test
+    void aTildeMeansTheUsersHome() throws Exception {
+        Files.writeString(tmp.resolve("in-home.txt"), "hi");
+        WebServer s = start("--attachments-dir", tmp.toString()); // the test's user.home is tmp
+        try (MockServer target = mock(r -> Reply.xml("<ok/>"))) {
+            postJson(s, "/api/send", withPath(sendBody(target.url("/")), "~/in-home.txt"));
+            assertTrue(target.requests.get(0).bodyText().contains("<v>aGk=</v>"));
+        }
+    }
+
+    @Test
+    void nothingOutsideTheAttachmentsFolderCanBeAttached() throws Exception {
+        Path dir = attachmentsFolder();
+        WebServer s = start("--attachments-dir", dir.toString());
+        String outside = tmp.resolve("secret.txt").toString();
+        try (MockServer target = mock(r -> Reply.xml("<ok/>"))) {
+            for (String path : new String[]{"../secret.txt", "sub/../../secret.txt", outside, "/etc/passwd",
+                    "../files-evil/x", "sub/../../files/../secret.txt"}) {
+                HttpResponse<String> r = post(s, "/api/send", "application/json",
+                        JSON.writeValueAsString(withPath(sendBody(target.url("/")), path)));
+                assertEquals(403, r.statusCode(), path + " -> " + r.body());
+                assertEquals("forbidden", JSON.readTree(r.body()).get("error").get("category").asText(), path);
+                assertFalse(r.body().contains("TOP-SECRET"), path);
+                // the same answer whether or not the file exists, so the folder's surroundings cannot be explored
+                assertTrue(r.body().contains("outside the folder"), r.body());
+            }
+            assertTrue(target.requests.isEmpty(), "nothing may reach the destination");
+
+            HttpResponse<String> check = post(s, "/api/attachments/check", "application/json", "{\"path\":\"../secret.txt\"}");
+            assertEquals(403, check.statusCode());
+        }
+    }
+
+    @Test
+    void aSymbolicLinkCannotLeaveTheAttachmentsFolder() throws Exception {
+        Path dir = attachmentsFolder();
+        try {
+            Files.createSymbolicLink(dir.resolve("escape.txt"), tmp.resolve("secret.txt"));
+            Files.createSymbolicLink(dir.resolve("escape-dir"), tmp);
+        } catch (IOException | UnsupportedOperationException e) {
+            org.junit.jupiter.api.Assumptions.abort("symbolic links are not available here: " + e);
+        }
+        WebServer s = start("--attachments-dir", dir.toString());
+        try (MockServer target = mock(r -> Reply.xml("<ok/>"))) {
+            for (String path : new String[]{"escape.txt", "escape-dir/secret.txt"}) {
+                HttpResponse<String> r = post(s, "/api/send", "application/json",
+                        JSON.writeValueAsString(withPath(sendBody(target.url("/")), path)));
+                assertEquals(403, r.statusCode(), path + " -> " + r.body());
+                assertFalse(r.body().contains("TOP-SECRET"));
+            }
+            assertTrue(target.requests.isEmpty());
+        }
+    }
+
+    @Test
+    void badAttachmentPathsAreRefusedWithAReason() throws Exception {
+        Path dir = attachmentsFolder();
+        WebServer s = start("--attachments-dir", dir.toString(), "--max-body-mb", "1");
+        Files.write(dir.resolve("big.bin"), new byte[1024 * 1024 + 1]);
+        Files.write(dir.resolve("big-a.bin"), new byte[700 * 1024]);
+        Files.write(dir.resolve("big-b.bin"), new byte[700 * 1024]);
+        Map<String, Object> request = sendBody("http://127.0.0.1:1/");
+
+        for (Object[] c : new Object[][]{{"missing.txt", 404, "not found"}, {"sub", 400, "not a readable file"},
+                {"big.bin", 413, "--max-body-mb"}, {"  ", 400, "neither a path nor file data"}}) {
+            HttpResponse<String> r = post(s, "/api/send", "application/json",
+                    JSON.writeValueAsString(withPath(new HashMap<>(request), (String) c[0])));
+            assertEquals(c[1], r.statusCode(), c[0] + " -> " + r.body());
+            assertTrue(r.body().contains((String) c[2]), c[0] + " -> " + r.body());
+        }
+
+        Map<String, Object> two = new HashMap<>(request);
+        two.put("body", ENV11.replace("<ping/>", "<a>cid:a</a><b>cid:b</b>"));
+        two.put("attachments", List.of(Map.of("cid", "a", "path", "big-a.bin"), Map.of("cid", "b", "path", "big-b.bin")));
+        HttpResponse<String> sum = post(s, "/api/send", "application/json", JSON.writeValueAsString(two));
+        assertEquals(413, sum.statusCode(), "the files add up to more than the limit: " + sum.body());
+
+        Map<String, Object> both = new HashMap<>(request);
+        both.put("attachments", List.of(Map.of("cid", "f", "path", "doc.txt", "contentBase64", "aGk=")));
+        HttpResponse<String> r = post(s, "/api/send", "application/json", JSON.writeValueAsString(both));
+        assertEquals(400, r.statusCode());
+        assertTrue(r.body().contains("both a path and content"), r.body());
+    }
+
+    @Test
+    void theUiCanCheckAnAttachmentPathBeforeSending() throws Exception {
+        Path dir = attachmentsFolder();
+        WebServer s = start("--attachments-dir", dir.toString());
+        JsonNode ok = postJson(s, "/api/attachments/check", Map.of("path", "sub/deep.txt"));
+        assertEquals("sub/deep.txt", ok.get("path").asText());
+        assertEquals("deep.txt", ok.get("name").asText());
+        assertEquals(4, ok.get("size").asLong());
+        assertEquals(dir.resolve("sub").resolve("deep.txt").toRealPath().toString(), ok.get("resolved").asText());
+
+        assertEquals(404, post(s, "/api/attachments/check", "application/json", "{\"path\":\"nope.txt\"}").statusCode());
+        assertEquals(415, post(s, "/api/attachments/check", "text/plain", "{\"path\":\"doc.txt\"}").statusCode(),
+                "a cross-site form post cannot ask the server about its files");
+        assertEquals(405, get(s, "/api/attachments/check").statusCode());
+        assertEquals(dir.toString(), JSON.readTree(get(s, "/api/info").body()).get("attachmentsDir").asText());
+    }
+
     private int tempDirs() throws IOException {
         try (Stream<Path> list = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
             return (int) list.filter(p -> p.getFileName().toString().startsWith("soapcli-web-")).count();

@@ -7,13 +7,13 @@ export interface KeyValue {
   enabled: boolean;
 }
 
-export interface AttachmentInput {
-  id: string;
-  cid: string;
-  filename: string;
-  size: number;
-  data: Uint8Array;
-}
+/**
+ * The file for a `cid:` of the body: a path on the SoapCLI server, which is saved with the request and read by the
+ * server when it is sent, or a file chosen on this computer, which only lives in memory.
+ */
+export type AttachmentInput =
+  | { kind: "path"; id: string; cid: string; path: string }
+  | { kind: "file"; id: string; cid: string; filename: string; size: number; data: Uint8Array };
 
 export type AuthKind = "none" | "basic" | "bearer";
 
@@ -26,7 +26,7 @@ export interface RequestDraft {
   /** Values for ___NAME:default___ placeholders; only the ones the user filled in. */
   args: Record<string, string>;
   auth: { kind: AuthKind; user: string; password: string; token: string };
-  /** The file chosen for each `cid:` of the body (one per cid). Kept in memory only. */
+  /** The file for each `cid:` of the body (one per cid). Paths are saved with the request; file contents never are. */
   attachments: AttachmentInput[];
   mtom: boolean;
   options: { timeoutSeconds: number; followRedirects: boolean; insecure: boolean };

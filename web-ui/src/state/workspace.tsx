@@ -1,11 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { pathAttachments } from "@/lib/attachments";
+import { MIN_VISIBLE_MS, loadAttachments, pause, pendingItems, type LoadItem } from "@/lib/load-attachments";
 import { SAMPLE_BODY } from "@/lib/sample";
 import {
   HISTORY_LIMIT, KEYS, fromStored, loadJson, loadSettings, saveJson, toStored,
   type HistoryEntry, type SavedRequest, type Settings, type StoredDraft,
 } from "@/lib/storage";
 import {
-  ServerError, fetchServerInfo, fetchServerProfiles, previewViaServer, sendViaServer,
+  ServerError, checkAttachment, fetchServerInfo, fetchServerProfiles, previewViaServer, sendViaServer,
   type ServerInfo, type ServerProfiles,
 } from "@/lib/transports/server";
 import { emptyDraft, newId, type RequestDraft, type RequestView, type ResponseView } from "@/lib/types";
@@ -17,6 +19,12 @@ export interface UiError {
   message: string;
   /** What the server called the problem: config, forbidden, network, unsupported, too-large, internal, unavailable. */
   category?: string;
+}
+
+/** The files a request names by path, while the server loads them (running) or after one could not be (failed). */
+export interface AttachmentLoad {
+  items: LoadItem[];
+  status: "running" | "failed";
 }
 
 interface Workspace {
@@ -34,6 +42,9 @@ interface Workspace {
   sending: boolean;
   send: () => Promise<void>;
   cancel: () => void;
+  /** Set while the attachments named by path are loaded before sending; the request page shows it in a dialog. */
+  attachmentLoad: AttachmentLoad | null;
+  dismissAttachmentLoad: () => void;
   clearResult: () => void;
   serverPreview: RequestView | null;
   refreshServerPreview: () => Promise<void>;
@@ -88,6 +99,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [response, setResponse] = useState<ResponseView | null>(null);
   const [error, setError] = useState<UiError | null>(null);
   const [sending, setSending] = useState(false);
+  const [attachmentLoad, setAttachmentLoad] = useState<AttachmentLoad | null>(null);
   const [serverPreview, setServerPreview] = useState<RequestView | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadJson<HistoryEntry[]>(KEYS.history, []));
   const [saved, setSaved] = useState<SavedRequest[]>(() => loadJson<SavedRequest[]>(KEYS.saved, []));
@@ -156,13 +168,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     controller.current = ctl;
     setSending(true);
     setError(null);
+    setAttachmentLoad(null);
     const record = (extra: Partial<HistoryEntry>) =>
       setHistory((h) => [{ id: newId(), at: Date.now(), draft: toStored(d), ...extra }, ...h].slice(0, HISTORY_LIMIT));
     try {
+      // Files named by path are loaded first, one by one, with a dialog; the request goes out only if all of them load.
+      const files = pathAttachments(d);
+      if (files.length > 0) {
+        const opened = Date.now();
+        setAttachmentLoad({ items: pendingItems(files), status: "running" });
+        const loaded = await loadAttachments(files, checkAttachment, (items) => setAttachmentLoad({ items, status: "running" }), ctl.signal);
+        if (!loaded.ok) {
+          setAttachmentLoad({ items: loaded.items, status: "failed" });
+          return;
+        }
+        await pause(Math.max(0, MIN_VISIBLE_MS - (Date.now() - opened)), ctl.signal);
+        setAttachmentLoad(null);
+      }
       const view = await sendViaServer(d, ctl.signal);
       setResponse(view);
       record({ status: view.status, statusText: view.statusText, elapsedMs: view.elapsedMs });
     } catch (e) {
+      setAttachmentLoad(null);
       const ui = toUiError(e);
       setError(ui);
       setResponse(null);
@@ -172,6 +199,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [draft]);
   const cancel = useCallback(() => controller.current?.abort(), []);
+  const dismissAttachmentLoad = useCallback(() => setAttachmentLoad(null), []);
 
   const refreshServerPreview = useCallback(async () => {
     try {
@@ -210,10 +238,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Workspace>(() => ({
     page, navigate, draft, patch, update, loadStored, resetDraft, response, error, sending, send, cancel, clearResult,
-    serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
+    attachmentLoad, dismissAttachmentLoad, serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
     exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer,
   }), [page, navigate, draft, patch, update, loadStored, resetDraft, response, error, sending, send, cancel, clearResult,
-    serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
+    attachmentLoad, dismissAttachmentLoad, serverPreview, refreshServerPreview, history, clearHistory, removeHistory, saved, saveCurrent, removeSaved,
     exportLibrary, importLibrary, clearAllData, settings, setSettings, server, refreshServer]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

@@ -18,6 +18,7 @@ services:
       # ACC_CREDENTIALS: ${ACC_CREDENTIALS:-}
     volumes:
       - ./config:/config:ro          # profiles.json (optional): see the documentation on profiles
+      # - ./attachments:/work:ro     # files the UI may attach by path (it can read nothing else); optional
     restart: unless-stopped
     read_only: true
     tmpfs:

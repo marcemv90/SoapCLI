@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ServerError, fetchServerInfo, sendViaServer, toServerRequest } from "../src/lib/transports/server";
 import { shellQuote, toCliCommand, toCurl } from "../src/lib/command";
-import { ENV12, attachment, draft, header } from "./helpers";
+import { ENV12, attachment, draft, header, pathAttachment } from "./helpers";
 
 describe("server transport", () => {
   it("maps a draft to the API request without leaking disabled headers", () => {
@@ -24,6 +24,22 @@ describe("server transport", () => {
     expect(r.authBasic).toBeUndefined();
     expect(r.insecure).toBe(true);
     expect(r.attachments).toEqual([{ cid: "m", filename: "m.txt", contentBase64: Buffer.from("hi").toString("base64") }]);
+  });
+
+  it("sends a file named by path as its path, and one chosen here as Base64", () => {
+    const d = draft({
+      body: ENV12.replace("<ping/>", "<a>cid:server</a><b>cid:local</b>"),
+      attachments: [pathAttachment("server", "  invoices/one.pdf "), attachment("local", "hi", "hi.txt")],
+    });
+    expect(toServerRequest(d).attachments).toEqual([
+      { cid: "server", path: "invoices/one.pdf" },
+      { cid: "local", filename: "hi.txt", contentBase64: Buffer.from("hi").toString("base64") },
+    ]);
+  });
+
+  it("does not send a path that is blank", () => {
+    const d = draft({ body: ENV12.replace("<ping/>", "<a>cid:x</a>"), attachments: [pathAttachment("x", "   ")] });
+    expect(toServerRequest(d).attachments).toEqual([]);
   });
 
   it("sends only the files the body refers to with cid:", () => {
@@ -94,6 +110,15 @@ describe("equivalent commands", () => {
   it("writes the docker variant", () => {
     const cmd = toCliCommand(d, "docker");
     expect(cmd).toContain('docker run --rm -v "$PWD:/work" -e SOAP_CREDENTIALS ghcr.io/marcemv90/soapcli');
+  });
+
+  it("writes a path as it is on the server, and a local file as sitting next to request.xml", () => {
+    const cmd = toCliCommand(draft({
+      body: ENV12.replace("<ping/>", "<a>cid:srv</a><b>cid:loc</b>"),
+      attachments: [pathAttachment("srv", "/work/in voices/one.pdf"), attachment("loc", "x", "two.txt")],
+    }), "jar");
+    expect(cmd).toContain("--attachment 'srv=/work/in voices/one.pdf'");
+    expect(cmd).toContain("--attachment 'loc=./two.txt'");
   });
 
   it("leaves out an attachment the body no longer refers to", () => {

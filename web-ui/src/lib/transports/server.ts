@@ -20,6 +20,17 @@ export interface ServerInfo {
   maxBodyBytes: number;
   profilesFileFound: boolean;
   profilesFile?: string;
+  /** The only folder a request may attach files from, by path. */
+  attachmentsDir: string;
+}
+
+/** What the server found at an attachment path. */
+export interface AttachmentCheck {
+  path: string;
+  name: string;
+  size: number;
+  /** Where the file really is. */
+  resolved: string;
 }
 
 export interface ServerProfile {
@@ -124,7 +135,7 @@ export async function fetchProfileRequest(name: string): Promise<string> {
 }
 
 /** The JSON the server expects for a draft. Secrets travel only to the server the page came from. Only the files
- * the body refers to with `cid:` are included. */
+ * the body refers to with `cid:` are included: by path (the server reads them) or as Base64 (chosen on this computer). */
 export function toServerRequest(draft: RequestDraft): Record<string, unknown> {
   const headers: Record<string, string> = {};
   for (const h of draft.headers) if (h.enabled && h.name.trim()) headers[h.name.trim()] = h.value;
@@ -143,8 +154,9 @@ export function toServerRequest(draft: RequestDraft): Record<string, unknown> {
     followRedirects: draft.options.followRedirects,
     insecure: draft.options.insecure || undefined,
     mtom: draft.mtom,
-    attachments: activeAttachments(draft)
-      .map((a) => ({ cid: a.cid, filename: a.filename, contentBase64: bytesToBase64(a.data) })),
+    attachments: activeAttachments(draft).map((a) => a.kind === "path"
+      ? { cid: a.cid, path: a.path.trim() }
+      : { cid: a.cid, filename: a.filename, contentBase64: bytesToBase64(a.data) }),
   };
 }
 
@@ -185,6 +197,10 @@ export async function sendViaServer(draft: RequestDraft, signal?: AbortSignal): 
 export async function previewViaServer(draft: RequestDraft): Promise<RequestView> {
   return toRequestView(await api<ApiRequestInfo>("preview", { json: toServerRequest(draft) }));
 }
+
+/** Asks the server to open the file at `path` (inside its attachments folder) and say what it found. */
+export const checkAttachment = (path: string, signal?: AbortSignal) =>
+  api<AttachmentCheck>("attachments/check", { json: { path }, signal });
 
 export async function formatViaServer(xml: string): Promise<string> {
   return (await api<{ xml: string }>("format", { json: { xml } })).xml;

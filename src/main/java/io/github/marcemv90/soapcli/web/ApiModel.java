@@ -35,11 +35,31 @@ public final class ApiModel {
         public List<AttachmentUpload> attachments = new ArrayList<>();
     }
 
+    /** A file for a {@code cid:}: its bytes ({@code contentBase64}) or, instead, a {@code path} on this server. */
     public static class AttachmentUpload {
         public String cid;
         /** Informational only: it is never used to build a path. */
         public String filename;
         public String contentBase64;
+        /**
+         * A file on the server, absolute or relative to the attachments folder ({@code --attachments-dir}). Only files
+         * inside that folder are accepted.
+         */
+        public String path;
+    }
+
+    public static class AttachmentCheckRequest {
+        public String path;
+    }
+
+    /** What the server found at an attachment path. */
+    public static class AttachmentCheckResponse {
+        /** The path as the browser wrote it. */
+        public String path;
+        public String name;
+        public long size;
+        /** Where it really is, after resolving a relative path and symbolic links. */
+        public String resolved;
     }
 
     public static class NameValue {
@@ -121,6 +141,8 @@ public final class ApiModel {
         public long maxBodyBytes;
         public boolean profilesFileFound;
         public String profilesFile;
+        /** The folder attachments may be read from by path. */
+        public String attachmentsDir;
     }
 
     public static class ProfileInfo {
