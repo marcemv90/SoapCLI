@@ -177,6 +177,10 @@ final class Workspace {
     }
 
     /** Why the UI may not change this workspace, whatever the server allows; {@code null} if it may. */
+    String readOnlyReason() {
+        return readOnlyReason(dir);
+    }
+
     private static String readOnlyReason(Path dir) {
         Meta meta = readMeta(dir.getFileName().toString(), dir);
         if (meta.error != null) {

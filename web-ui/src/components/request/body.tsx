@@ -14,7 +14,7 @@ import { detectSoapVersion } from "@/lib/soap";
 import { checkAttachment, type PlaceholderEntry } from "@/lib/transports/server";
 import { newId, type AttachmentInput } from "@/lib/types";
 import { clean, prettyPrint } from "@/lib/xml";
-import { useWorkspace } from "@/state/workspace";
+import { useApp } from "@/state/app";
 
 const Code = ({ children }: { children: ReactNode }) => (
   <code className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-white/10 dark:text-gray-300">{children}</code>
@@ -75,7 +75,7 @@ function VariableSelect({ name, entry, defaultValue, value, onChange }: {
 }
 
 function VariablesSection({ body }: { body: string }) {
-  const { draft, patch, server, navigate, setPlaceholderIntent } = useWorkspace();
+  const { draft, patch, server, navigate, setPlaceholderIntent } = useApp();
   const placeholders = useMemo(() => findPlaceholders(body), [body]);
   const known = server.placeholders;
   const optionsOf = (name: string) => {
@@ -243,7 +243,7 @@ function AttachmentRow({ cid, entry, onPath, onFile, onRemove }: {
 }
 
 function AttachmentsSection({ body }: { body: string }) {
-  const { draft, patch, update, server } = useWorkspace();
+  const { draft, patch, update, server } = useApp();
   // Inline mode replaces CDATA text too; MTOM does not. Same rule as the server.
   const cids = useMemo(() => findCids(body, { cdata: !draft.mtom }), [body, draft.mtom]);
   const byCid = useMemo(() => new Map(draft.attachments.map((a) => [a.cid, a])), [draft.attachments]);
@@ -314,7 +314,7 @@ function AttachmentsSection({ body }: { body: string }) {
 }
 
 export function BodyTab() {
-  const { draft, patch } = useWorkspace();
+  const { draft, patch } = useApp();
   // Typing never waits for the scans below.
   const body = useDeferredValue(draft.body);
   const detected = useMemo(() => detectSoapVersion(clean(body)), [body]);

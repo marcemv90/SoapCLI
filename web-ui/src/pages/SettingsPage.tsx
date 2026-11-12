@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { formatBytes } from "@/lib/format";
 import type { RequestLayout } from "@/lib/storage";
 import { useTheme, type ThemeMode } from "@/state/theme";
-import { useWorkspace } from "@/state/workspace";
+import { useApp } from "@/state/app";
 
 function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
@@ -43,7 +43,7 @@ function ConfirmButton({ label, onConfirm, disabled }: { label: string; onConfir
 
 export function SettingsPage() {
   const { mode, setMode } = useTheme();
-  const { settings, setSettings, server, saved, history, clearHistory, clearAllData, navigate } = useWorkspace();
+  const { settings, setSettings, server, saved, history, clearHistory, clearAllData, navigate, workspace, workspacesEnabled } = useApp();
   const info = server.info;
   return (
     <div className="grid grid-cols-1 gap-4 md:gap-6 xl:grid-cols-2">
@@ -75,6 +75,20 @@ export function SettingsPage() {
             <Row label="Status"><Badge variant="light" color="success" size="sm">connected</Badge></Row>
             <Row label="Version">{info.version}</Row>
             <Row label="Destinations">{info.allowedHosts.length === 0 ? "any host" : info.allowedHosts.join(", ")}</Row>
+            {workspacesEnabled && (
+              <>
+                <Row label="Workspaces folder"><span className="break-all font-mono text-xs">{info.workspacesDir}</span>{" "}
+                  <button type="button" onClick={() => navigate("workspaces")} className="font-medium text-brand-500 hover:underline dark:text-brand-400">View</button>
+                </Row>
+                <Row label="Open workspace">{workspace ?? "none"}</Row>
+                {info.workspace && info.workspace.allowedHosts.length > 0 && (
+                  <Row label="This workspace can only call"><span className="break-all font-mono text-xs">{info.workspace.allowedHosts.join(", ")}</span></Row>
+                )}
+                <Row label="Saved requests of the workspace">
+                  {server.library ? (server.library.editable ? "can be saved here" : "read-only") : "unknown"}
+                </Row>
+              </>
+            )}
             <Row label="Skip TLS checks">{info.insecureTlsAllowed ? "allowed" : "disabled"}</Row>
             <Row label="Largest request">{formatBytes(info.maxBodyBytes)}</Row>
             <Row label="Placeholders file">
@@ -86,7 +100,7 @@ export function SettingsPage() {
               {!info.configEditAllowed ? "off on this server" : server.profiles?.editable === false ? "allowed, but the files are read-only" : "allowed"}
             </Row>
             <Row label="Attachments folder"><span className="break-all font-mono text-xs">{info.attachmentsDir}</span></Row>
-            <Row label="Profiles file">{info.profilesFileFound ? info.profilesFile : "none found"}</Row>
+            <Row label={workspacesEnabled ? "Profiles file of the workspace" : "Profiles file"}>{info.profilesFileFound ? info.profilesFile : "none found"}</Row>
             <Row label="Profiles">
               {server.profiles?.error ? "invalid file" : server.profiles?.profiles.length ?? 0}
               {" "}
@@ -101,8 +115,10 @@ export function SettingsPage() {
         )}
       </Section>
 
-      <Section title="Your data" description="Everything is stored in this browser only.">
-        <Row label="Saved requests">{saved.length}</Row>
+      <Section title="Your data" description={workspacesEnabled
+        ? "The requests saved in a workspace are on the server. What is listed here is kept in this browser only."
+        : "Everything is stored in this browser only."}>
+        <Row label={workspacesEnabled ? "Requests saved in this browser" : "Saved requests"}>{saved.length}</Row>
         <Row label="History entries">{history.length}</Row>
         <div className="flex flex-wrap gap-2">
           <ConfirmButton label="Clear history" onConfirm={clearHistory} disabled={history.length === 0} />

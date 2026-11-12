@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fromStored, toStored } from "../src/lib/storage";
+import { KEYS, fromStored, scopedKeys, toStored } from "../src/lib/storage";
 import { attachment, draft, header, pathAttachment } from "./helpers";
 
 describe("stored drafts", () => {
@@ -45,5 +45,25 @@ describe("stored drafts", () => {
     expect(back).not.toHaveProperty("transport");
     expect(back.endpoint).toBe("http://x");
     expect(back.profile).toBe("");
+  });
+});
+
+describe("what is kept per workspace", () => {
+  it("keeps the request being edited and the history apart for each workspace", () => {
+    expect(scopedKeys("billing")).toEqual({ draft: "soapcli.draft@billing", history: "soapcli.history@billing" });
+    expect(scopedKeys("billing")).not.toEqual(scopedKeys("shipping"));
+  });
+
+  it("keeps the keys of before there were workspaces when there is none, so nothing stored earlier is lost", () => {
+    expect(scopedKeys(null)).toEqual({ draft: KEYS.draft, history: KEYS.history });
+  });
+
+  it("cannot make a workspace's key collide with the saved requests or the settings", () => {
+    const keys = new Set<string>(Object.values(KEYS));
+    for (const name of ["saved", "settings", "theme", "draft", "history", "workspace"]) {
+      const scoped = scopedKeys(name);
+      expect(keys.has(scoped.draft), name).toBe(false);
+      expect(keys.has(scoped.history), name).toBe(false);
+    }
   });
 });

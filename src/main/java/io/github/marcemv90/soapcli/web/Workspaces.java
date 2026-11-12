@@ -165,6 +165,11 @@ final class Workspaces {
     String remove(String name) {
         requireManageable();
         Workspace workspace = get(name);
+        String readOnly = workspace.readOnlyReason();
+        if (readOnly != null) {
+            // Taking it out of use is the most that can be done to a workspace: not for one an administrator protected.
+            throw new SendError(403, "forbidden", readOnly + " If it should go, rename its folder by hand.");
+        }
         String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
         Path target = dir().resolve(".removed-" + name + "-" + stamp);
         for (int i = 2; Files.exists(target); i++) {

@@ -6,9 +6,24 @@ export const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 export type CommandKind = "jar" | "docker";
 
-/** The equivalent `SoapCLI` command line. The request body is expected in `request.xml`. */
-export function toCliCommand(draft: RequestDraft, kind: CommandKind, image = "ghcr.io/marcemv90/soapcli"): string {
+/** A workspace of the server, and the folder that holds the workspaces on it, when it is known. */
+export interface WorkspaceRef {
+  name: string;
+  dir?: string;
+}
+
+/**
+ * The equivalent `SoapCLI` command line. The request body is expected in `request.xml`. For a request of a workspace the
+ * command names it too (`--workspace`), so the profile, its secrets and the paths in it are those of the workspace.
+ */
+export function toCliCommand(draft: RequestDraft, kind: CommandKind, image = "ghcr.io/marcemv90/soapcli", workspace?: WorkspaceRef): string {
   const args: string[] = [];
+  // Where the workspaces are: here the server's folder; in the container, the one the command mounts there.
+  const workspaces = kind === "jar" ? workspace?.dir : workspace ? "/workspaces" : undefined;
+  if (workspace) {
+    if (kind === "jar" && workspace.dir) args.push(`--workspaces-dir ${shellQuote(workspace.dir)}`);
+    args.push(`--workspace ${shellQuote(workspace.name)}`);
+  }
   if (draft.profile) args.push(`--profile ${shellQuote(draft.profile)}`);
   if (draft.endpoint.trim()) args.push(`--endpoint ${shellQuote(draft.endpoint.trim())}`);
   args.push("--request-file request.xml");
@@ -21,8 +36,13 @@ export function toCliCommand(draft: RequestDraft, kind: CommandKind, image = "gh
   if (draft.auth.kind === "basic") args.push("--auth-basic-env SOAP_CREDENTIALS");
   if (draft.auth.kind === "bearer") args.push("--auth-bearer-env SOAP_TOKEN");
   for (const a of activeAttachments(draft)) {
-    // A path is written as it is on the server; a file chosen here is assumed to sit next to request.xml.
-    const file = a.kind === "path" ? a.path.trim() : `./${a.filename || a.cid}`;
+    // A path is written as it is on the server (in a workspace: from its attachments folder); a file chosen here is assumed to
+    // sit next to request.xml.
+    const given = a.kind === "path" ? a.path.trim() : "";
+    const inAttachments = workspace && workspaces && given !== "" && !/^(\/|~|[A-Za-z]:[\\/])/.test(given);
+    const file = a.kind === "path"
+      ? (inAttachments ? `${workspaces}/${workspace.name}/attachments/${given}` : given)
+      : `./${a.filename || a.cid}`;
     args.push(`--attachment ${shellQuote(`${a.cid}=${file}`)}`);
   }
   if (draft.mtom) args.push("--mtom");
@@ -31,13 +51,18 @@ export function toCliCommand(draft: RequestDraft, kind: CommandKind, image = "gh
   if (draft.options.insecure) args.push("--insecure");
 
   const lines: string[] = [];
+  if (workspace) {
+    lines.push(kind === "jar" && !workspace.dir
+      ? "# --workspaces-dir (or SOAPCLI_WORKSPACES_DIR): the folder that holds the workspaces"
+      : kind === "docker" ? "# The folder on the left of -v is the one that holds the workspaces: change it to yours" : "");
+  }
   if (draft.auth.kind === "basic") lines.push("# export SOAP_CREDENTIALS='user:password'");
   if (draft.auth.kind === "bearer") lines.push("# export SOAP_TOKEN='...'");
   const prefix = kind === "jar"
     ? "java -jar SoapCLI.jar"
-    : `docker run --rm -v "$PWD:/work"${draft.auth.kind === "basic" ? " -e SOAP_CREDENTIALS" : ""}${draft.auth.kind === "bearer" ? " -e SOAP_TOKEN" : ""} ${image}`;
+    : `docker run --rm -v "$PWD:/work"${workspace ? ` -v "$PWD/workspaces:/workspaces:ro" -e SOAPCLI_WORKSPACES_DIR=/workspaces` : ""}${draft.auth.kind === "basic" ? " -e SOAP_CREDENTIALS" : ""}${draft.auth.kind === "bearer" ? " -e SOAP_TOKEN" : ""} ${image}`;
   lines.push([prefix, ...args].join(" \\\n  "));
-  return lines.join("\n");
+  return lines.filter((l) => l !== "").join("\n");
 }
 
 /**

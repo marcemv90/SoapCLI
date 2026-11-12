@@ -13,7 +13,7 @@ import {
   PLACEHOLDER_NAME, duplicateValues, newOptionRow, parseOptionLines, toOptions, type OptionRow,
 } from "@/lib/placeholder-options";
 import { ServerError, deletePlaceholder, savePlaceholder, type PlaceholderEntry } from "@/lib/transports/server";
-import { useWorkspace } from "@/state/workspace";
+import { useApp } from "@/state/app";
 import { cn } from "@/utils";
 
 function PlaceholderForm({ mode, entry, name: initialName, revision, onSaved, onCancel, onReload }: {
@@ -142,7 +142,7 @@ function PlaceholderForm({ mode, entry, name: initialName, revision, onSaved, on
 type Mode = { kind: "view" } | { kind: "create"; name: string } | { kind: "edit"; name: string };
 
 export function PlaceholdersPage() {
-  const { server, refreshServer, placeholderIntent, setPlaceholderIntent } = useWorkspace();
+  const { server, refreshServer, placeholderIntent, setPlaceholderIntent } = useApp();
   const result = server.placeholders;
   const entries = result?.placeholders ?? [];
   const [chosen, setChosen] = useState<string | null>(null);

@@ -1,5 +1,6 @@
 import { activeAttachments } from "../attachments";
 import { bytesToBase64 } from "../format";
+import type { StoredDraft } from "../storage";
 import type { HeaderPair, RequestDraft, RequestView, ResponseView } from "../types";
 
 /** A failure of the SoapCLI server or of a call it made for us. */
@@ -25,6 +26,73 @@ export interface ServerInfo {
   placeholdersFile: string;
   /** Whether the server lets the UI change the profiles and placeholders files (they may still be read-only). */
   configEditAllowed: boolean;
+  /** Whether the server uses workspaces: then the files above are those of the workspace asked about. */
+  workspacesEnabled: boolean;
+  workspacesDir?: string;
+  workspace?: WorkspaceSummary;
+}
+
+/** A folder with its own profiles, placeholder options, attachments and saved requests. */
+export interface WorkspaceSummary {
+  name: string;
+  description?: string;
+  /** An administrator marked it read-only: it can be used, not changed. */
+  readOnly: boolean;
+  /** Destinations it is limited to, on top of what the server allows. */
+  allowedHosts: string[];
+  /** A problem with its workspace.json. */
+  error?: string;
+  /** How many it has; absent when they cannot be counted. */
+  profiles?: number;
+  placeholders?: number;
+  requests?: number;
+}
+
+export interface ServerWorkspaces {
+  enabled: boolean;
+  dir?: string;
+  /** Whether the UI may create and remove workspaces, and why not. */
+  manageable: boolean;
+  manageReason?: string;
+  workspaces: WorkspaceSummary[];
+}
+
+/** A saved request of a workspace, as listed: without its body. */
+export interface SavedRequestSummary {
+  id: string;
+  name: string;
+  folder?: string;
+  /** ISO 8601. */
+  updatedAt?: string;
+  endpoint?: string;
+  soapAction?: string;
+  profile?: string;
+  revision?: string;
+  /** Why the file cannot be used as a saved request. */
+  error?: string;
+}
+
+export interface ServerLibrary {
+  editable: boolean;
+  readOnlyReason?: string;
+  requests: SavedRequestSummary[];
+}
+
+export interface SavedRequestDetail {
+  id: string;
+  name: string;
+  folder?: string;
+  updatedAt?: string;
+  revision: string;
+  draft: Partial<StoredDraft>;
+}
+
+export interface SaveRequestResult {
+  id: string;
+  revision: string;
+  updatedAt: string;
+  /** What was left out of the saved request, such as the value of a header that holds a credential. */
+  warnings: string[];
 }
 
 /** What the server found at an attachment path. */
@@ -123,11 +191,22 @@ interface ApiSendResponse {
   request: ApiRequestInfo;
 }
 
-// Relative URLs, so the UI also works when it is served under a path prefix.
-async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+/** The workspace the calls that belong to one are made for; set by the page when it opens one. */
+let workspace: string | null = null;
+
+export function setWorkspace(name: string | null): void {
+  workspace = name;
+}
+
+/** `profiles` of this server, or `workspaces/billing/profiles` of one of its workspaces. */
+const scoped = (path: string) => (workspace === null ? path : `workspaces/${encodeURIComponent(workspace)}/${path}`);
+
+// Relative URLs, so the UI also works when it is served under a path prefix. Everything belongs to the workspace that is
+// open, except what is about the whole server (`global`).
+async function api<T>(path: string, init?: RequestInit & { json?: unknown; global?: boolean }): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`api/${path}`, {
+    response = await fetch(`api/${init?.global ? path : scoped(path)}`, {
       method: init?.json === undefined ? init?.method ?? "GET" : "POST",
       headers: init?.json === undefined ? undefined : { "Content-Type": "application/json" },
       body: init?.json === undefined ? undefined : JSON.stringify(init.json),
@@ -159,11 +238,32 @@ async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Pr
 /** `null` when this page is not served by a SoapCLI server (a static copy, for instance). */
 export async function fetchServerInfo(): Promise<ServerInfo | null> {
   try {
-    return await api<ServerInfo>("info");
+    return await api<ServerInfo>("info", { global: true });
   } catch {
     return null;
   }
 }
+
+/** The info of the workspace that is open: where its files are. */
+export const fetchWorkspaceInfo = () => api<ServerInfo>("info");
+
+export const fetchWorkspaces = () => api<ServerWorkspaces>("workspaces", { global: true });
+
+export const createWorkspace = (body: { name: string; description: string }) =>
+  api<WorkspaceSummary>("workspaces/create", { json: body, global: true });
+
+/** Sets a workspace aside (its folder is renamed, nothing is deleted). Resolves to the new name of the folder. */
+export const removeWorkspace = async (name: string) =>
+  (await api<{ movedTo: string }>("workspaces/remove", { json: { name }, global: true })).movedTo;
+
+export const fetchLibrary = () => api<ServerLibrary>("requests");
+export const fetchSavedRequest = (id: string) => api<SavedRequestDetail>(`requests/${encodeURIComponent(id)}`);
+
+/** Saves a new request, or (with `id` and the `revision` it was opened at) a change to one. */
+export const saveSavedRequest = (body: { id?: string; revision?: string; name: string; folder: string; draft: StoredDraft }) =>
+  api<SaveRequestResult>("requests/save", { json: body });
+
+export const deleteSavedRequest = (id: string, revision: string) => api<Record<string, never>>("requests/delete", { json: { id, revision } });
 
 export const fetchServerProfiles = () => api<ServerProfiles>("profiles");
 export const fetchPlaceholders = () => api<ServerPlaceholders>("placeholders");
@@ -186,7 +286,7 @@ export const deletePlaceholder = (name: string, revision: string) =>
 export async function fetchProfileRequest(name: string): Promise<string> {
   let response: Response;
   try {
-    response = await fetch(`api/profiles/${encodeURIComponent(name)}/request`, { cache: "no-store" });
+    response = await fetch(`api/${scoped(`profiles/${encodeURIComponent(name)}/request`)}`, { cache: "no-store" });
   } catch {
     throw new ServerError("unavailable", "Cannot reach the SoapCLI server this page came from.", 0);
   }
@@ -263,5 +363,5 @@ export const checkAttachment = (path: string, signal?: AbortSignal) =>
   api<AttachmentCheck>("attachments/check", { json: { path }, signal });
 
 export async function formatViaServer(xml: string): Promise<string> {
-  return (await api<{ xml: string }>("format", { json: { xml } })).xml;
+  return (await api<{ xml: string }>("format", { json: { xml }, global: true })).xml;
 }

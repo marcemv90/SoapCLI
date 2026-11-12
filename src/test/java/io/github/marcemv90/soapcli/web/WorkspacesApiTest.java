@@ -523,6 +523,18 @@ class WorkspacesApiTest {
     }
 
     @Test
+    void aWorkspaceAnAdministratorMarkedReadOnlyCannotBeRemovedFromTheUi() throws Exception {
+        Path ws = workspace("prod");
+        Files.writeString(ws.resolve("workspace.json"), "{ \"readOnly\": true }");
+        WebServer s = start();
+        HttpResponse<String> r = post(s, "/api/workspaces/remove", map("name", "prod"));
+        assertEquals(403, r.statusCode(), r.body());
+        assertTrue(r.body().contains("read-only") && r.body().contains("by hand"), r.body());
+        assertTrue(Files.isDirectory(ws), "it is still there");
+        assertEquals(List.of("prod"), names(getJson(s, "/api/workspaces")));
+    }
+
+    @Test
     void creatingAndRemovingFollowTheServersPermissionToEdit() throws Exception {
         workspace("billing");
         WebServer network = start("--host", "0.0.0.0");
